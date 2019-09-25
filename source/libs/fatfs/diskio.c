@@ -46,7 +46,7 @@ typedef struct {
 } sector_cache_t;
 
 #define MAX_SEC_CACHE_ENTRIES 64
-static sector_cache_t *sector_cache = (sector_cache_t*)0x40022000;
+static sector_cache_t *sector_cache;
 static u32 secindex = 0;
 
 DSTATUS disk_status (
@@ -135,7 +135,15 @@ DRESULT disk_read (
     switch (pdrv)
     {
     case 0:
-        return sdmmc_storage_read(&sd_storage, sector, count, buff) ? RES_OK : RES_ERROR;
+        if (((u32)buff >= DRAM_START) && !((u32)buff % 8))
+            return sdmmc_storage_read(&sd_storage, sector, count, buff) ? RES_OK : RES_ERROR;
+        u8 *buf = (u8 *)SDMMC_UPPER_BUFFER;
+        if (sdmmc_storage_read(&sd_storage, sector, count, buf))
+        {
+            memcpy(buff, buf, 512 * count);
+            return RES_OK;
+        }
+        return RES_ERROR;
 
     case 1:;
         __attribute__ ((aligned (16))) static u8 tweak[0x10];
@@ -143,6 +151,10 @@ DRESULT disk_read (
         __attribute__ ((aligned (16))) static u32 prev_sector = 0;
         u32 tweak_exp = 0;
         bool regen_tweak = true, cache_sector = false;
+
+        if (secindex == 0) {
+            sector_cache = (sector_cache_t *)malloc(sizeof(sector_cache_t) * MAX_SEC_CACHE_ENTRIES);
+        }
 
         u32 s = 0;
         if (count == 1) {
@@ -199,7 +211,14 @@ DRESULT disk_write (
 {
     if (pdrv == 1)
         return RES_WRPRT;
-    return sdmmc_storage_write(&sd_storage, sector, count, (void *)buff) ? RES_OK : RES_ERROR;
+
+    if (((u32)buff >= DRAM_START) && !((u32)buff % 8))
+        return sdmmc_storage_write(&sd_storage, sector, count, (void *)buff) ? RES_OK : RES_ERROR;
+    u8 *buf = (u8 *)SDMMC_UPPER_BUFFER; //TODO: define this somewhere.
+    memcpy(buf, buff, 512 * count);
+    if (sdmmc_storage_write(&sd_storage, sector, count, buf))
+        return RES_OK;
+    return RES_ERROR;
 }
 
 DRESULT disk_ioctl (

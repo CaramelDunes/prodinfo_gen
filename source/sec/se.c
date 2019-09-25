@@ -33,6 +33,9 @@ typedef struct _se_ll_t
 	vu32 size;
 } se_ll_t;
 
+static u32 _se_rsa_mod_sizes[TEGRA_SE_RSA_KEYSLOT_COUNT];
+static u32 _se_rsa_exp_sizes[TEGRA_SE_RSA_KEYSLOT_COUNT];
+
 static void _gf256_mul_x(void *block)
 {
 	u8 *pdata = (u8 *)block;
@@ -156,6 +159,66 @@ void se_rsa_acc_ctrl(u32 rs, u32 flags)
 		SE(SE_RSA_KEYTABLE_ACCESS_REG_OFFSET + 4 * rs) = (((flags >> 4) & 4) | (flags & 3)) ^ 7;
 	if (flags & 0x80)
 		SE(SE_RSA_KEYTABLE_ACCESS_LOCK_OFFSET) &= ~(1 << rs);
+}
+
+// se_rsa_key_set() was derived from Atmosphère's set_rsa_keyslot
+void se_rsa_key_set(u32 ks, const void *mod, u32 mod_size, const void *exp, u32 exp_size)
+{
+	u32 *data = (u32 *)mod;
+	for (u32 i = 0; i < mod_size / 4; i++)
+	{
+		SE(SE_RSA_KEYTABLE_ADDR) = RSA_KEY_NUM(ks) | RSA_KEY_TYPE(RSA_KEY_TYPE_MOD) | i;
+		SE(SE_RSA_KEYTABLE_DATA) = byte_swap_32(data[mod_size / 4 - i - 1]);
+	}
+
+	data = (u32 *)exp;
+	for (u32 i = 0; i < exp_size / 4; i++)
+	{
+		SE(SE_RSA_KEYTABLE_ADDR) = RSA_KEY_NUM(ks) | RSA_KEY_TYPE(RSA_KEY_TYPE_EXP) | i;
+		SE(SE_RSA_KEYTABLE_DATA) = byte_swap_32(data[exp_size / 4 - i - 1]);
+	}
+
+	_se_rsa_mod_sizes[ks] = mod_size;
+	_se_rsa_exp_sizes[ks] = exp_size;
+}
+
+// se_rsa_key_clear() was derived from Atmosphère's clear_rsa_keyslot
+void se_rsa_key_clear(u32 ks)
+{
+	for (u32 i = 0; i < TEGRA_SE_RSA2048_DIGEST_SIZE / 4; i++)
+	{
+		SE(SE_RSA_KEYTABLE_ADDR) = RSA_KEY_NUM(ks) | RSA_KEY_TYPE(RSA_KEY_TYPE_MOD) | i;
+		SE(SE_RSA_KEYTABLE_DATA) = 0;
+	}
+	for (u32 i = 0; i < TEGRA_SE_RSA2048_DIGEST_SIZE / 4; i++)
+	{
+		SE(SE_RSA_KEYTABLE_ADDR) = RSA_KEY_NUM(ks) | RSA_KEY_TYPE(RSA_KEY_TYPE_EXP) | i;
+		SE(SE_RSA_KEYTABLE_DATA) = 0;
+	}
+}
+
+// se_rsa_exp_mod() was derived from Atmosphère's se_synchronous_exp_mod and se_get_exp_mod_output
+int se_rsa_exp_mod(u32 ks, void *dst, u32 dst_size, const void *src, u32 src_size)
+{
+	int res;
+	u8 stack_buf[TEGRA_SE_RSA2048_DIGEST_SIZE];
+
+	for (u32 i = 0; i < src_size; i++)
+		stack_buf[i] = *((u8 *)src + src_size - i - 1);
+
+	SE(SE_CONFIG_REG_OFFSET) = SE_CONFIG_ENC_ALG(ALG_RSA) | SE_CONFIG_DST(DST_RSAREG);
+	SE(SE_RSA_CONFIG) = RSA_KEY_SLOT(ks);
+	SE(SE_RSA_KEY_SIZE_REG_OFFSET) = (_se_rsa_mod_sizes[ks] >> 6) - 1;
+	SE(SE_RSA_EXP_SIZE_REG_OFFSET) = _se_rsa_exp_sizes[ks] >> 2;
+
+	res = _se_execute(OP_START, NULL, 0, stack_buf, src_size);
+
+	// Copy output hash.
+	u32 *dst32 = (u32 *)dst;
+	for (u32 i = 0; i < dst_size / 4; i++)
+		dst32[dst_size / 4 - i - 1] = byte_swap_32(SE(SE_RSA_OUTPUT + (i << 2)));
+
+	return res;
 }
 
 void se_key_acc_ctrl(u32 ks, u32 flags)

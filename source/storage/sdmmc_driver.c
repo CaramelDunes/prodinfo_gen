@@ -32,6 +32,10 @@
 //#define DPRINTF(...) gfx_printf(__VA_ARGS__)
 #define DPRINTF(...)
 
+#pragma GCC push_options
+#pragma GCC target ("thumb")
+#pragma GCC optimize ("Os")
+
 /*! SCMMC controller base addresses. */
 static const u32 _sdmmc_bases[4] = {
 	0x700B0000,
@@ -1146,3 +1150,5 @@ int sdmmc_enable_low_voltage(sdmmc_t *sdmmc)
 
 	return 0;
 }
+
+#pragma GCC pop_options

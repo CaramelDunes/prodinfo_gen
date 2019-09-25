@@ -26,6 +26,7 @@
 #include "../libs/fatfs/ff.h"
 #include "../mem/heap.h"
 #include "../mem/mc.h"
+#include "../mem/minerva.h"
 #include "../mem/sdram.h"
 #include "../sec/se.h"
 #include "../sec/se_t210.h"
@@ -51,7 +52,8 @@ extern int  sd_save_to_file(void *buf, u32 size, const char *filename);
 
 extern hekate_config h_cfg;
 
-u32 _key_count = 0;
+u32 _key_count = 0, _titlekey_count = 0;
+u32 color_idx = 0;
 sdmmc_storage_t storage;
 emmc_part_t *system_part;
 u32 start_time, end_time;
@@ -59,13 +61,17 @@ u32 start_time, end_time;
 #define TPRINTF(text) \
     end_time = get_tmr_us(); \
     gfx_printf(text" done in %d us\n", end_time - start_time); \
-    start_time = get_tmr_us()
+    start_time = get_tmr_us(); \
+    minerva_periodic_training()
+
 #define TPRINTFARGS(text, args...) \
     end_time = get_tmr_us(); \
     gfx_printf(text" done in %d us\n", args, end_time - start_time); \
-    start_time = get_tmr_us()
+    start_time = get_tmr_us(); \
+    minerva_periodic_training()
+
 #define SAVE_KEY(name, src, len) _save_key(name, src, len, text_buffer)
-#define SAVE_KEY_FAMILY(name, src, count, len) _save_key_family(name, src, count, len, text_buffer)
+#define SAVE_KEY_FAMILY(name, src, start, count, len) _save_key_family(name, src, start, count, len, text_buffer)
 
 static u8 temp_key[0x10],
           bis_key[4][0x20] = {0},
@@ -94,27 +100,31 @@ static u8 temp_key[0x10],
           titlekek[KB_FIRMWARE_VERSION_MAX+1][0x10] = {0};
 
 // key functions
-static bool   _key_exists(const void *data) { return memcmp(data, zeros, 0x10); };
-static void   _save_key(const char *name, const void *data, const u32 len, char *outbuf);
-static void   _save_key_family(const char *name, const void *data, const u32 num_keys, const u32 len, char *outbuf);
-static void   _generate_kek(u32 ks, const void *key_source, void *master_key, const void *kek_seed, const void *key_seed);
+static bool  _key_exists(const void *data) { return memcmp(data, zeros, 0x10); };
+static void  _save_key(const char *name, const void *data, u32 len, char *outbuf);
+static void  _save_key_family(const char *name, const void *data, u32 start_key, u32 num_keys, u32 len, char *outbuf);
+static void  _generate_kek(u32 ks, const void *key_source, void *master_key, const void *kek_seed, const void *key_seed);
 // nca functions
-static void  *_nca_process(u32 hk_ks1, u32 hk_ks2, FIL *fp, u32 key_offset, u32 len);
-static u32    _nca_fread_ctr(u32 ks, FIL *fp, void *buffer, u32 offset, u32 len, u8 *ctr);
-static void   _update_ctr(u8 *ctr, u32 ofs);
+static void *_nca_process(u32 hk_ks1, u32 hk_ks2, FIL *fp, u32 key_offset, u32 len);
+static u32   _nca_fread_ctr(u32 ks, FIL *fp, void *buffer, u32 offset, u32 len, u8 *ctr);
+static void  _update_ctr(u8 *ctr, u32 ofs);
+// titlekey functions
+static bool  _test_key_pair(const void *E, const void *D, const void *N);
+static void  _mgf1_xor(void *masked, u32 masked_size, const void *seed, u32 seed_size);
 
 void dump_keys() {
-    display_backlight_brightness(100, 1000);
+    display_backlight_brightness(h_cfg.backlight, 1000);
     gfx_clear_partial_grey(0x1B, 0, 1256);
     gfx_con_setpos(0, 0);
 
     gfx_printf("[%kLo%kck%kpi%kck%k_R%kCM%k v%d.%d.%d%k]\n\n",
         colors[0], colors[1], colors[2], colors[3], colors[4], colors[5], 0xFFFF00FF, LP_VER_MJ, LP_VER_MN, LP_VER_BF, 0xFFCCCCCC);
 
+    tui_sbar(true);
+
     start_time = get_tmr_us();
     u32 begin_time = get_tmr_us();
     u32 retries = 0;
-    u32 color_idx = 0;
 
     tsec_ctxt_t tsec_ctxt;
     sdmmc_t sdmmc;
@@ -141,9 +151,11 @@ void dump_keys() {
         }
     }
     if (!found_tsec_fw) {
-        EPRINTF("Failed to locate TSEC firmware.");
+        EPRINTF("Unable to locate TSEC firmware.");
         goto out_wait;
     }
+
+    minerva_periodic_training();
 
     tsec_key_data_t *key_data = (tsec_key_data_t *)(tsec_ctxt.fw + TSEC_KEY_DATA_ADDR);
     tsec_ctxt.pkg1 = pkg1;
@@ -177,10 +189,10 @@ void dump_keys() {
             u32 payload_size = *(u32 *)(IPL_LOAD_ADDR + 0x84) - IPL_LOAD_ADDR;
             f_write(&fp, (u8 *)IPL_LOAD_ADDR, payload_size, NULL);
             f_close(&fp);
-            gfx_printf("%k\nFirmware 7.x or higher detected.\n%kRenamed /sept/payload.bin", colors[(color_idx) % 6], colors[(color_idx + 1) % 6]);
-            color_idx += 2;
-            gfx_printf("\n%k     to /sept/payload.bak\n%kCopied self to /sept/payload.bin", colors[(color_idx) % 6], colors[(color_idx + 1) % 6]);
-            color_idx += 2;
+            gfx_printf("%k\nFirmware 7.x or higher detected.\n\n", colors[(color_idx++) % 6]);
+            gfx_printf("%kRenamed /sept/payload.bin", colors[(color_idx++) % 6]);
+            gfx_printf("\n     to /sept/payload.bak\n\n", colors[(color_idx++) % 6]);
+            gfx_printf("%kCopied self to /sept/payload.bin\n", colors[(color_idx++) % 6]);
             sdmmc_storage_end(&storage);
             if (!reboot_to_sept((u8 *)tsec_ctxt.fw, tsec_ctxt.size, pkg1_id->kb))
                 goto out_wait;
@@ -239,7 +251,8 @@ get_tsec: ;
             se_aes_key_set(8, master_key[0], 0x10);
             se_aes_crypt_block_ecb(8, 0, temp_key, mkey_vectors[0]);
             if (_key_exists(temp_key)) {
-                EPRINTFARGS("Failed to derive master key. kb = %d", pkg1_id->kb);
+                EPRINTFARGS("Unable to derive master key. kb = %d.\n Put current sept files on SD and retry.", pkg1_id->kb);
+                memset(master_key, 0, sizeof(master_key));
             }
         } else if (_key_exists(master_key[KB_FIRMWARE_VERSION_MAX])) {
             // handle sept version differences
@@ -257,7 +270,8 @@ get_tsec: ;
                 memcpy(master_key[kb], zeros, 0x10);
             }
             if (_key_exists(temp_key)) {
-                EPRINTF("Failed to derive master key.");
+                EPRINTF("Unable to derive master key.");
+                memset(master_key, 0, sizeof(master_key));
             }
         }
     }
@@ -269,6 +283,7 @@ get_tsec: ;
     se_aes_key_set(8, tsec_keys, 0x10);
     se_aes_key_set(9, sbk, 0x10);
     for (u32 i = 0; i <= KB_FIRMWARE_VERSION_600; i++) {
+        minerva_periodic_training();
         se_aes_crypt_block_ecb(8, 0, keyblob_key[i], keyblob_key_source[i]); // temp = unwrap(kbks, tsec)
         se_aes_crypt_block_ecb(9, 0, keyblob_key[i], keyblob_key[i]); // kbk = unwrap(temp, sbk)
         se_aes_key_set(7, keyblob_key[i], 0x10);
@@ -305,7 +320,7 @@ get_tsec: ;
     /*  key = unwrap(source, wrapped_key):
         key_set(ks, wrapped_key), block_ecb(ks, 0, key, source) -> final key in key
     */
-
+    minerva_periodic_training();
     u32 key_generation = 0;
     if (pkg1_id->kb >= KB_FIRMWARE_VERSION_500) {
         if ((fuse_read_odm(4) & 0x800) && fuse_read_odm(0) == 0x8E61ECAE && fuse_read_odm(1) == 0xF2BA3BB2) {
@@ -346,7 +361,7 @@ get_tsec: ;
     // Find package2 partition.
     emmc_part_t *pkg2_part = nx_emmc_part_find(&gpt, "BCPKG2-1-Normal-Main");
     if (!pkg2_part) {
-        EPRINTF("Failed to locate Package2.");
+        EPRINTF("Unable to locate Package2.");
         goto pkg2_done;
     }
 
@@ -367,6 +382,7 @@ get_tsec: ;
     nx_emmc_part_read(&storage, pkg2_part, 0x4000 / NX_EMMC_BLOCKSIZE, pkg2_size_aligned / NX_EMMC_BLOCKSIZE, pkg2);
 
     // Decrypt package2 and parse KIP1 blobs in INI1 section. Try all available key generations in case of pkg1/pkg2 mismatch.
+    minerva_periodic_training();
     pkg2_hdr_t *pkg2_hdr;
     pkg2_hdr_t hdr;
     u32 pkg2_kb;
@@ -379,14 +395,14 @@ get_tsec: ;
             break;
     }
     if (pkg2_kb == MAX_KEY) {
-        EPRINTF("Failed to derive Package2 key.");
+        EPRINTF("Unable to derive Package2 key.");
         goto pkg2_done;
     } else if (pkg2_kb != pkg1_id->kb)
         EPRINTFARGS("Warning! Package1-Package2 mismatch: %d, %d", pkg1_id->kb, pkg2_kb);
 
     pkg2_hdr = pkg2_decrypt(pkg2);
     if (!pkg2_hdr) {
-        EPRINTF("Failed to decrypt Package2.");
+        EPRINTF("Unable to decrypt Package2.");
         goto pkg2_done;
     }
 
@@ -406,7 +422,7 @@ get_tsec: ;
         free(CONTAINER_OF(iter, pkg2_kip1_info_t, link));
 
     if (!ki) {
-        EPRINTF("Failed to parse INI1.");
+        EPRINTF("Unable to parse INI1.");
         goto pkg2_done;
     }
 
@@ -485,6 +501,7 @@ get_tsec: ;
 
     u8 temp_hash[0x20];
     for (u32 i = ki->kip1->sections[0].size_comp + start_offset; i < ki->size - 0x20; ) {
+        minerva_periodic_training();
         se_calc_sha256(temp_hash, ki->kip1->data + i, key_lengths[hash_order[hash_index]]);
         if (!memcmp(temp_hash, fs_hashes_sha256[hash_order[hash_index]], 0x20)) {
             memcpy(fs_keys[hash_order[hash_index]], ki->kip1->data + i, key_lengths[hash_order[hash_index]]);
@@ -504,10 +521,11 @@ get_tsec: ;
             i += alignment;
         }
     }
-
 pkg2_done:
     free(pkg2);
     free(ki);
+
+    u8 *rights_ids = NULL, *titlekeys = NULL;
 
     TPRINTFARGS("%kFS keys...      ", colors[(color_idx++) % 6]);
 
@@ -539,7 +557,6 @@ pkg2_done:
         se_aes_crypt_block_ecb(8, 0, titlekek[i], titlekek_source);
     }
 
-
     if (!_key_exists(header_key) || !_key_exists(bis_key[2]))
     {
         EPRINTF("Missing FS keys. Skipping ES/SSL keys.");
@@ -553,12 +570,12 @@ pkg2_done:
 
     system_part = nx_emmc_part_find(&gpt, "SYSTEM");
     if (!system_part) {
-        EPRINTF("Failed to locate System partition.");
+        EPRINTF("Unable to locate System partition.");
         goto key_output;
     }
     __attribute__ ((aligned (16))) FATFS emmc_fs;
     if (f_mount(&emmc_fs, "emmc:", 1)) {
-        EPRINTF("Mount failed.");
+        EPRINTF("Mount Unable.");
         goto key_output;
     }
 
@@ -574,7 +591,7 @@ pkg2_done:
     u8 *temp_file = NULL;
 
     if (f_opendir(&dir, path)) {
-        EPRINTF("Failed to open System:/Contents/registered.");
+        EPRINTF("Unable to open System:/Contents/registered.");
         goto dismount;
     }
 
@@ -583,14 +600,14 @@ pkg2_done:
     f_closedir(&dir);
 
     if (f_opendir(&dir, path)) {
-        EPRINTF("Failed to open System:/Contents/registered.");
+        EPRINTF("Unable to open System:/Contents/registered.");
         goto dismount;
     }
 
     path[25] = '/';
     start_offset = 0;
-
     while (!f_readdir(&dir, &fno) && fno.fname[0] && titles_found < title_limit) {
+        minerva_periodic_training();
         memcpy(path + 26, fno.fname, 36);
         path[62] = 0;
         if (fno.fattrib & AM_DIR)
@@ -711,6 +728,20 @@ pkg2_done:
     f_closedir(&dir);
     free(dec_header);
 
+    // derive eticket_rsa_kek and ssl_rsa_kek
+    if (_key_exists(es_keys[0]) && _key_exists(es_keys[1]) && _key_exists(master_key[0])) {
+        for (u32 i = 0; i < 0x10; i++)
+            temp_key[i] = aes_kek_generation_source[i] ^ aes_kek_seed_03[i];
+        _generate_kek(7, es_keys[1], master_key[0], temp_key, NULL);
+        se_aes_crypt_block_ecb(7, 0, eticket_rsa_kek, es_keys[0]);
+    }
+    if (_key_exists(ssl_keys[1]) && _key_exists(es_keys[2]) && _key_exists(master_key[0])) {
+        for (u32 i = 0; i < 0x10; i++)
+            temp_key[i] = aes_kek_generation_source[i] ^ aes_kek_seed_01[i];
+        _generate_kek(7, es_keys[2], master_key[0], temp_key, NULL);
+        se_aes_crypt_block_ecb(7, 0, ssl_rsa_kek, ssl_keys[1]);
+    }
+
     if (memcmp(pkg1_id->id, "2016", 4)) {
         TPRINTFARGS("%kES & SSL keys...", colors[(color_idx++) % 6]);
     } else {
@@ -718,23 +749,22 @@ pkg2_done:
     }
 
     if (f_open(&fp, "sd:/Nintendo/Contents/private", FA_READ | FA_OPEN_EXISTING)) {
-        EPRINTF("Unable to locate SD seed. Skipping.");
-        goto dismount;
+        EPRINTF("Unable to open SD seed vector. Skipping.");
+        goto get_titlekeys;
     }
     // get sd seed verification vector
     if (f_read(&fp, temp_key, 0x10, &read_bytes) || read_bytes != 0x10) {
-        EPRINTF("Unable to locate SD seed. Skipping.");
+        EPRINTF("Unable to read SD seed vector. Skipping.");
         f_close(&fp);
-        goto dismount;
+        goto get_titlekeys;
     }
     f_close(&fp);
 
     if (f_open(&fp, "emmc:/save/8000000000000043", FA_READ | FA_OPEN_EXISTING)) {
-        EPRINTF("Failed to open ns_appman save.\nSkipping SD seed.");
-        goto dismount;
+        EPRINTF("Unable to open ns_appman save.\nSkipping SD seed.");
+        goto get_titlekeys;
     }
 
-    // locate sd seed
     u8 read_buf[0x20] = {0};
     for (u32 i = 0x8000; i < f_size(&fp); i += 0x4000) {
         if (f_lseek(&fp, i) || f_read(&fp, read_buf, 0x20, &read_bytes) || read_bytes != 0x20)
@@ -748,33 +778,188 @@ pkg2_done:
 
     TPRINTFARGS("%kSD Seed...      ", colors[(color_idx++) % 6]);
 
+get_titlekeys:
+    if (!_key_exists(eticket_rsa_kek))
+        goto dismount;
+
+    if (!minerva_cfg) {
+        gfx_printf("%k Minerva not found!\n This may take up to a minute...\n", colors[(color_idx++) % 6]);
+        gfx_printf(" For better performance, download Hekate\n and put bootloader/sys/libsys_minerva.bso\n on SD.\n");
+    }
+    gfx_printf("%kTitlekeys...     ", colors[(color_idx++) % 6]);
+    u32 save_x = gfx_con.x, save_y = gfx_con.y;
+    gfx_printf("\n");
+
+    u8 null_hash[0x20] = {
+        0xE3, 0xB0, 0xC4, 0x42, 0x98, 0xFC, 0x1C, 0x14, 0x9A, 0xFB, 0xF4, 0xC8, 0x99, 0x6F, 0xB9, 0x24,
+        0x27, 0xAE, 0x41, 0xE4, 0x64, 0x9B, 0x93, 0x4C, 0xA4, 0x95, 0x99, 0x1B, 0x78, 0x52, 0xB8, 0x55};
+
+    se_aes_key_set(8, bis_key[0] + 0x00, 0x10);
+    se_aes_key_set(9, bis_key[0] + 0x10, 0x10);
+
+    u32 buf_size = 0x80000;
+    u8 *buffer = (u8 *)malloc(buf_size);
+
+    u8 keypair[0x230] = {0};
+
+    emummc_storage_read(&storage, 0x4400 / NX_EMMC_BLOCKSIZE, 0x4000 / NX_EMMC_BLOCKSIZE, buffer);
+
+    se_aes_xts_crypt(9, 8, 0, 0, buffer, buffer, 0x4000, 1);
+
+    se_aes_key_set(8, bis_key[2] + 0x00, 0x10);
+    se_aes_key_set(9, bis_key[2] + 0x10, 0x10);
+
+    if (*(u32 *)buffer != 0x304C4143) {
+        EPRINTF("CAL0 magic not found. Check BIS key 0.");
+        free(buffer);
+        goto dismount;
+    }
+
+    se_aes_key_set(2, eticket_rsa_kek, 0x10);
+    se_aes_crypt_ctr(2, keypair, 0x230, buffer + 0x38a0, 0x230, buffer + 0x3890);
+
+    u8 *D = keypair, *N = keypair + 0x100, *E = keypair + 0x200;
+
+    // Check public exponent is 0x10001 big endian
+    if (E[0] != 0 || E[1] != 1 || E[2] != 0 || E[3] != 1) {
+        EPRINTF("Invalid public exponent.");
+        free(buffer);
+        goto dismount;
+    }
+
+    if (!_test_key_pair(E, D, N)) {
+        EPRINTF("Invalid keypair. Check eticket_rsa_kek.");
+        free(buffer);
+        goto dismount;
+    }
+
+    se_rsa_key_set(0, N, 0x100, D, 0x100);
+
+    if (f_stat("emmc:/save/80000000000000E1", &fno)) {
+        EPRINTF("Unable to stat ES save 1. Skipping.");
+        free(buffer);
+        goto dismount;
+    }
+    u64 total_size = fno.fsize;
+    if (f_stat("emmc:/save/80000000000000E2", &fno)) {
+        EPRINTF("Unable to stat ES save 2. Skipping.");
+        free(buffer);
+        goto dismount;
+    }
+    total_size += fno.fsize;
+    u32 br;
+    u64 total_br = 0;
+    rights_ids = (u8 *)malloc(0x400000);
+    titlekeys = (u8 *)malloc(0x400000);
+    u8 M[0x100];
+    if (f_open(&fp, "emmc:/save/80000000000000E1", FA_READ | FA_OPEN_EXISTING)) {
+        EPRINTF("Unable to open ES save 1. Skipping.");
+        free(buffer);
+        goto dismount;
+    }
+    f_lseek(&fp, 0x8000);
+    u32 pct = 0, last_pct = 0;
+    tui_pbar(save_x, save_y, pct, COLOR_GREEN, 0xFF155500);
+
+    while (!f_read(&fp, buffer, buf_size, &br)) {
+        total_br += br;
+        for (u32 i = 0; i < br; i += 0x4000) {
+            pct = (u32)((total_br + i) * 100 / total_size);
+            if (pct > last_pct && pct <= 100) {
+                last_pct = pct;
+                tui_pbar(save_x, save_y, pct, COLOR_GREEN, 0xFF155500);
+            }
+            for (u32 j = i; j < i + 0x4000; j += 0x400) {
+                minerva_periodic_training();
+                if (buffer[j] == 4 && buffer[j+1] == 0 && buffer[j+2] == 1 && buffer[j+3] == 0) {
+                    u32 k = 0;
+                    bool titlekey_found = false;
+                    for (; k < _titlekey_count; k++) {
+                        if (!memcmp(rights_ids + 0x10 * k, buffer + j + 0x2a0, 0x10)) {
+                            titlekey_found = true;
+                            break;
+                        }
+                    }
+                    if (titlekey_found)
+                        continue;
+                    memcpy(rights_ids + 0x10 * _titlekey_count, buffer + j + 0x2a0, 0x10);
+                    memcpy(titlekeys + 0x10 * _titlekey_count, buffer + j + 0x180, 0x10);
+                    _titlekey_count++;
+                } else {
+                    break;
+                }
+            }
+        }
+        if (br < buf_size) break;
+    }
+
+    u32 common_titlekey_count = _titlekey_count;
+    if (f_open(&fp, "emmc:/save/80000000000000E2", FA_READ | FA_OPEN_EXISTING)) {
+        EPRINTF("Unable to open ES save 2. Skipping.");
+        free(buffer);
+        goto dismount;
+    }
+    f_lseek(&fp, 0x8000);
+    while (!f_read(&fp, buffer, buf_size, &br)) {
+        total_br += br;
+        for (u32 i = 0; i < br; i += 0x4000) {
+            pct = (u32)((total_br + i) * 100 / total_size);
+            if (pct > last_pct && pct <= 100) {
+                last_pct = pct;
+                tui_pbar(save_x, save_y, pct, COLOR_GREEN, 0xFF155500);
+            }
+            for (u32 j = i; j < i + 0x4000; j += 0x400) {
+                minerva_periodic_training();
+                if (buffer[j] == 4 && buffer[j+1] == 0 && buffer[j+2] == 1 && buffer[j+3] == 0) {
+                    u32 k = common_titlekey_count;
+                    bool titlekey_found = false;
+                    for (; k < _titlekey_count; k++) {
+                        if (!memcmp(rights_ids + 0x10 * k, buffer + j + 0x2a0, 0x10)) {
+                            titlekey_found = true;
+                            break;
+                        }
+                    }
+                    if (titlekey_found)
+                        continue;
+                    memcpy(rights_ids + 0x10 * _titlekey_count, buffer + j + 0x2a0, 0x10);
+
+                    u8 *titlekey_block = buffer + j + 0x180;
+                    se_rsa_exp_mod(0, M, 0x100, titlekey_block, 0x100);
+                    u8 *salt = M + 1;
+                    u8 *db = M + 0x21;
+                    _mgf1_xor(salt, 0x20, db, 0xdf);
+                    _mgf1_xor(db, 0xdf, salt, 0x20);
+                    if (memcmp(db, null_hash, 0x20))
+                        continue;
+                    memcpy(titlekeys + 0x10 * _titlekey_count, db + 0xcf, 0x10);
+                    _titlekey_count++;
+                } else {
+                    break;
+                }
+            }
+        }
+        if (br < buf_size) break;
+    }
+    free(buffer);
+    f_close(&fp);
+
+    gfx_con_setpos(0, save_y);
+    TPRINTFARGS("\n%k                ", colors[(color_idx++) % 6]);
+    gfx_printf("\n%k  Found %d titlekeys.\n", colors[(color_idx++) % 6], _titlekey_count);
+
 dismount:
     f_mount(NULL, "emmc:", 1);
     nx_emmc_gpt_free(&gpt);
     emummc_storage_end(&storage);
 
-    // derive eticket_rsa_kek and ssl_rsa_kek
-    if (_key_exists(es_keys[0]) && _key_exists(es_keys[1]) && _key_exists(master_key[0])) {
-        for (u32 i = 0; i < 0x10; i++)
-            temp_key[i] = aes_kek_generation_source[i] ^ aes_kek_seed_03[i];
-        _generate_kek(8, es_keys[1], master_key[0], temp_key, NULL);
-        se_aes_crypt_block_ecb(8, 0, eticket_rsa_kek, es_keys[0]);
-    }
-    if (_key_exists(ssl_keys[1]) && _key_exists(es_keys[2]) && _key_exists(master_key[0])) {
-        for (u32 i = 0; i < 0x10; i++)
-            temp_key[i] = aes_kek_generation_source[i] ^ aes_kek_seed_01[i];
-        _generate_kek(8, es_keys[2], master_key[0], temp_key, NULL);
-        se_aes_crypt_block_ecb(8, 0, ssl_rsa_kek, ssl_keys[1]);
-    }
-
 key_output: ;
-    __attribute__ ((aligned (16))) char text_buffer[0x3000] = {0};
+    char *text_buffer = (char *)malloc(_titlekey_count * 68 < 0x3000 ? 0x3000 : _titlekey_count * 68 + 1);
 
     SAVE_KEY("aes_kek_generation_source", aes_kek_generation_source, 0x10);
     SAVE_KEY("aes_key_generation_source", aes_key_generation_source, 0x10);
     SAVE_KEY("bis_kek_source", bis_kek_source, 0x10);
-    SAVE_KEY_FAMILY("bis_key", bis_key, 4, 0x20);
-    SAVE_KEY_FAMILY("bis_key_source", bis_key_source, 3, 0x20);
+    SAVE_KEY_FAMILY("bis_key", bis_key, 0, 4, 0x20);
+    SAVE_KEY_FAMILY("bis_key_source", bis_key_source, 0, 3, 0x20);
     SAVE_KEY("device_key", device_key, 0x10);
     SAVE_KEY("eticket_rsa_kek", eticket_rsa_kek, 0x10);
     SAVE_KEY("eticket_rsa_kek_source", es_keys[0], 0x10);
@@ -782,26 +967,23 @@ key_output: ;
     SAVE_KEY("header_kek_source", fs_keys[0], 0x10);
     SAVE_KEY("header_key", header_key, 0x20);
     SAVE_KEY("header_key_source", fs_keys[1], 0x20);
-    SAVE_KEY_FAMILY("key_area_key_application", key_area_key[0], MAX_KEY, 0x10);
+    SAVE_KEY_FAMILY("key_area_key_application", key_area_key[0], 0, MAX_KEY, 0x10);
     SAVE_KEY("key_area_key_application_source", fs_keys[2], 0x10);
-    SAVE_KEY_FAMILY("key_area_key_ocean", key_area_key[1], MAX_KEY, 0x10);
+    SAVE_KEY_FAMILY("key_area_key_ocean", key_area_key[1], 0, MAX_KEY, 0x10);
     SAVE_KEY("key_area_key_ocean_source", fs_keys[3], 0x10);
-    SAVE_KEY_FAMILY("key_area_key_system", key_area_key[2], MAX_KEY, 0x10);
+    SAVE_KEY_FAMILY("key_area_key_system", key_area_key[2], 0, MAX_KEY, 0x10);
     SAVE_KEY("key_area_key_system_source", fs_keys[4], 0x10);
-    SAVE_KEY_FAMILY("keyblob", keyblob, 6, 0x90);
-    SAVE_KEY_FAMILY("keyblob_key", keyblob_key, 6, 0x10);
-    SAVE_KEY_FAMILY("keyblob_key_source", keyblob_key_source, 6, 0x10);
-    SAVE_KEY_FAMILY("keyblob_mac_key", keyblob_mac_key, 6, 0x10);
+    SAVE_KEY_FAMILY("keyblob", keyblob, 0, 6, 0x90);
+    SAVE_KEY_FAMILY("keyblob_key", keyblob_key, 0, 6, 0x10);
+    SAVE_KEY_FAMILY("keyblob_key_source", keyblob_key_source, 0, 6, 0x10);
+    SAVE_KEY_FAMILY("keyblob_mac_key", keyblob_mac_key, 0, 6, 0x10);
     SAVE_KEY("keyblob_mac_key_source", keyblob_mac_key_source, 0x10);
-    SAVE_KEY_FAMILY("master_kek", master_kek, MAX_KEY, 0x10);
-    SAVE_KEY("master_kek_source_06", master_kek_sources[0], 0x10);
-    SAVE_KEY("master_kek_source_07", master_kek_sources[1], 0x10);
-    SAVE_KEY("master_kek_source_08", master_kek_sources[2], 0x10);
-    SAVE_KEY("master_kek_source_09", master_kek_sources[3], 0x10);
-    SAVE_KEY_FAMILY("master_key", master_key, MAX_KEY, 0x10);
+    SAVE_KEY_FAMILY("master_kek", master_kek, 0, MAX_KEY, 0x10);
+    SAVE_KEY_FAMILY("master_kek_source", master_kek_sources, KB_FIRMWARE_VERSION_620, sizeof(master_kek_sources) / 0x10, 0x10);
+    SAVE_KEY_FAMILY("master_key", master_key, 0, MAX_KEY, 0x10);
     SAVE_KEY("master_key_source", master_key_source, 0x10);
-    SAVE_KEY_FAMILY("package1_key", package1_key, 6, 0x10);
-    SAVE_KEY_FAMILY("package2_key", package2_key, MAX_KEY, 0x10);
+    SAVE_KEY_FAMILY("package1_key", package1_key, 0, 6, 0x10);
+    SAVE_KEY_FAMILY("package2_key", package2_key, 0, MAX_KEY, 0x10);
     SAVE_KEY("package2_key_source", package2_key_source, 0x10);
     SAVE_KEY("per_console_key_source", per_console_key_source, 0x10);
     SAVE_KEY("retail_specific_aes_key_source", retail_specific_aes_key_source, 0x10);
@@ -822,7 +1004,7 @@ key_output: ;
     SAVE_KEY("ssl_rsa_kek", ssl_rsa_kek, 0x10);
     SAVE_KEY("ssl_rsa_kek_source_x", es_keys[2], 0x10);
     SAVE_KEY("ssl_rsa_kek_source_y", ssl_keys[1], 0x10);
-    SAVE_KEY_FAMILY("titlekek", titlekek, MAX_KEY, 0x10);
+    SAVE_KEY_FAMILY("titlekek", titlekek, 0, MAX_KEY, 0x10);
     SAVE_KEY("titlekek_source", titlekek_source, 0x10);
     SAVE_KEY("tsec_key", tsec_keys, 0x10);
     if (pkg1_id->kb == KB_FIRMWARE_VERSION_620)
@@ -831,10 +1013,10 @@ key_output: ;
     //gfx_con.fntsz = 8; gfx_puts(text_buffer); gfx_con.fntsz = 16;
 
     end_time = get_tmr_us();
-    gfx_printf("\n%kFound %d keys.", colors[(color_idx++) % 6], _key_count);
+    gfx_printf("\n%k  Found %d keys.\n\n", colors[(color_idx++) % 6], _key_count);
     _key_count = 0;
-    gfx_printf("\n%kLockpick totally done in %d us", colors[(color_idx++) % 6], end_time - begin_time);
-    gfx_printf("\n%kFound through master_key_%02x\n", colors[(color_idx++) % 6], MAX_KEY - 1);
+    gfx_printf("%kLockpick totally done in %d us\n\n", colors[(color_idx++) % 6], end_time - begin_time);
+    gfx_printf("%kFound through master_key_%02x.\n\n", colors[(color_idx++) % 6], MAX_KEY - 1);
 
     f_mkdir("sd:/switch");
     char keyfile_path[30] = "sd:/switch/";
@@ -845,17 +1027,36 @@ key_output: ;
     if (sd_mount() && !sd_save_to_file(text_buffer, strlen(text_buffer), keyfile_path) && !f_stat(keyfile_path, &fno)) {
         gfx_printf("%kWrote %d bytes to %s\n", colors[(color_idx++) % 6], (u32)fno.fsize, keyfile_path);
     } else
-        EPRINTF("Failed to save keys to SD.");
-    h_cfg.emummc_force_disable = emummc_load_cfg();
+        EPRINTF("Unable to save keys to SD.");
+
+    if (_titlekey_count == 0)
+        goto out_wait;
+    memset(text_buffer, 0, _titlekey_count * 68 + 1);
+    for (u32 i = 0; i < _titlekey_count; i++) {
+        for (u32 j = 0; j < 0x10; j++)
+            sprintf(&text_buffer[i * 68 + j * 2], "%02x", rights_ids[i * 0x10 + j]);
+        sprintf(&text_buffer[i * 68 + 0x20], " = ");
+        for (u32 j = 0; j < 0x10; j++)
+            sprintf(&text_buffer[i * 68 + 0x23 + j * 2], "%02x", titlekeys[i * 0x10 + j]);
+        sprintf(&text_buffer[i * 68 + 0x43], "\n");
+    }
+    sprintf(&keyfile_path[11], "title.keys");
+    if (sd_mount() && !sd_save_to_file(text_buffer, strlen(text_buffer), keyfile_path) && !f_stat(keyfile_path, &fno)) {
+        gfx_printf("%kWrote %d bytes to %s\n", colors[(color_idx++) % 6], (u32)fno.fsize, keyfile_path);
+    } else
+        EPRINTF("Unable to save titlekeys to SD.");
+    free(rights_ids);
+    free(titlekeys);
+    free(text_buffer);
 
 out_wait:
+    h_cfg.emummc_force_disable = emummc_load_cfg();
     sd_unmount();
     gfx_printf("\n%kPress any key to return to the main menu.", colors[(color_idx) % 6], colors[(color_idx + 1) % 6], colors[(color_idx + 2) % 6]);
-
     btn_wait();
 }
 
-static void _save_key(const char *name, const void *data, const u32 len, char *outbuf) {
+static void _save_key(const char *name, const void *data, u32 len, char *outbuf) {
     if (!_key_exists(data))
         return;
     u32 pos = strlen(outbuf);
@@ -866,9 +1067,9 @@ static void _save_key(const char *name, const void *data, const u32 len, char *o
     _key_count++;
 }
 
-static void _save_key_family(const char *name, const void *data, const u32 num_keys, const u32 len, char *outbuf) {
+static void _save_key_family(const char *name, const void *data, u32 start_key, u32 num_keys, u32 len, char *outbuf) {
     char temp_name[0x40] = {0};
-    for (u32 i = 0; i < num_keys; i++) {
+    for (u32 i = start_key; i < num_keys + start_key; i++) {
         sprintf(temp_name, "%s_%02x", name, i);
         _save_key(temp_name, data + i * len, len, outbuf);
     }
@@ -949,4 +1150,46 @@ static void _update_ctr(u8 *ctr, u32 ofs) {
     ofs >>= 4;
     for (u32 i = 0; i < 4; i++, ofs >>= 8)
         ctr[0x10-i-1] = (u8)(ofs & 0xff);
+}
+
+static bool _test_key_pair(const void *E, const void *D, const void *N) {
+    u8 X[0x100] = {0}, Y[0x100] = {0}, Z[0x100] = {0};
+
+    // 0xCAFEBABE
+    X[0xfc] = 0xca; X[0xfd] = 0xfe; X[0xfe] = 0xba; X[0xff] = 0xbe;
+    se_rsa_key_set(0, N, 0x100, D, 0x100);
+    se_rsa_exp_mod(0, Y, 0x100, X, 0x100);
+    se_rsa_key_set(0, N, 0x100, E, 4);
+    se_rsa_exp_mod(0, Z, 0x100, Y, 0x100);
+
+    return !memcmp(X, Z, 0x100);
+}
+
+// _mgf1_xor() was derived from Atmosphère's calculate_mgf1_and_xor
+static void _mgf1_xor(void *masked, u32 masked_size, const void *seed, u32 seed_size) {
+    u8 cur_hash[0x20];
+    u8 hash_buf[0xe4];
+
+    u32 hash_buf_size = seed_size + 4;
+    memcpy(hash_buf, seed, seed_size);
+    u32 round_num = 0;
+
+    u8 *p_out = (u8 *)masked;
+
+    while (masked_size) {
+        u32 cur_size = masked_size > 0x20 ? 0x20 : masked_size;
+
+        for (u32 i = 0; i < 4; i++)
+            hash_buf[seed_size + 3 - i] = (round_num >> (8 * i)) & 0xff;
+        round_num++;
+
+        se_calc_sha256(cur_hash, hash_buf, hash_buf_size);
+
+        for (unsigned int i = 0; i < cur_size; i++) {
+            *p_out ^= cur_hash[i];
+            p_out++;
+        }
+
+        masked_size -= cur_size;
+    }
 }

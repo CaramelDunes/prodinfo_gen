@@ -147,13 +147,11 @@ void *tui_do_menu(menu_t *menu)
 				gfx_con_setcol(0xFF1B1B1B, 1, 0xFFCCCCCC);
 			else
 				gfx_con_setcol(0xFFCCCCCC, 1, 0xFF1B1B1B);
-			// if (menu->ents[cnt].type == MENT_CAPTION)
-			// 	gfx_printf("%k %s", menu->ents[cnt].color, menu->ents[cnt].caption);
-			if (menu->ents[cnt].type != MENT_CHGLINE) {
+			if (menu->ents[cnt].type != MENT_CHGLINE && menu->ents[cnt].type != MENT_MENU) {
 				if (cnt == idx)
 					gfx_printf(" %s", menu->ents[cnt].caption);
 				else
-					gfx_printf("%k %s", menu->ents[cnt].color, menu->ents[cnt].caption);//gfx_printf(" %s", menu->ents[cnt].caption);
+					gfx_printf("%k %s", menu->ents[cnt].color, menu->ents[cnt].caption);
 			}
 			if(menu->ents[cnt].type == MENT_MENU)
 				gfx_printf("%k...", 0xFF0099EE);

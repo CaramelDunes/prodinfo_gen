@@ -28,6 +28,7 @@
 #include "t210.h"
 #include "../gfx/di.h"
 #include "../mem/mc.h"
+#include "../mem/minerva.h"
 #include "../mem/sdram.h"
 #include "../power/max77620.h"
 #include "../power/max7762x.h"
@@ -309,6 +310,7 @@ void reconfig_hw_workaround(bool extra_reconfig, u32 magic)
 	// Flush and disable MMU.
 	bpmp_mmu_disable();
 	bpmp_clk_rate_set(BPMP_CLK_NORMAL);
+	minerva_change_freq(FREQ_204);
 
 	// Re-enable clocks to Audio Processing Engine as a workaround to hanging.
 	CLOCK(CLK_RST_CONTROLLER_CLK_OUT_ENB_V) |= (1 << 10); // Enable AHUB clock.

@@ -24,6 +24,7 @@
 #include "gfx/tui.h"
 #include "libs/fatfs/ff.h"
 #include "mem/heap.h"
+#include "mem/minerva.h"
 #include "power/max77620.h"
 #include "rtc/max77620-rtc.h"
 #include "soc/bpmp.h"
@@ -165,18 +166,18 @@ void dump_emunand()
 }
 
 ment_t ment_top[] = {
-	MDEF_HANDLER("Dump keys from SysNAND", dump_sysnand, COLOR_RED),
+    MDEF_HANDLER("Dump keys from SysNAND", dump_sysnand, COLOR_RED),
     MDEF_HANDLER("Dump keys from emuMMC", dump_emunand, COLOR_ORANGE),
-	MDEF_CAPTION("---------------", COLOR_YELLOW),
-	MDEF_HANDLER("Reboot (Normal)", reboot_normal, COLOR_GREEN),
-	MDEF_HANDLER("Reboot (RCM)", reboot_rcm, COLOR_BLUE),
-	MDEF_HANDLER("Power off", power_off, COLOR_VIOLET),
-	MDEF_END()
+    MDEF_CAPTION("---------------", COLOR_YELLOW),
+    MDEF_HANDLER("Reboot (Normal)", reboot_normal, COLOR_GREEN),
+    MDEF_HANDLER("Reboot (RCM)", reboot_rcm, COLOR_BLUE),
+    MDEF_HANDLER("Power off", power_off, COLOR_VIOLET),
+    MDEF_END()
 };
 
 menu_t menu_top = { ment_top, NULL, 0, 0 };
 
-#define IPL_STACK_TOP  0x4003F000
+#define IPL_STACK_TOP  0x90010000//0x4003F000
 #define IPL_HEAP_START 0x90020000
 
 extern void pivot_stack(u32 stack_top);
@@ -188,6 +189,10 @@ void ipl_main()
     heap_init(IPL_HEAP_START);
 
     set_default_configuration();
+
+    sd_mount();
+    minerva_init();
+    minerva_change_freq(FREQ_1600);
 
     display_init();
     u32 *fb = display_init_framebuffer();
