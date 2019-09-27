@@ -46,8 +46,9 @@ typedef struct {
 } sector_cache_t;
 
 #define MAX_SEC_CACHE_ENTRIES 64
-static sector_cache_t *sector_cache;
+static sector_cache_t *sector_cache = NULL;
 static u32 secindex = 0;
+bool clear_sector_cache = false;
 
 DSTATUS disk_status (
     BYTE pdrv /* Physical drive number to identify the drive */
@@ -152,8 +153,11 @@ DRESULT disk_read (
         u32 tweak_exp = 0;
         bool regen_tweak = true, cache_sector = false;
 
-        if (secindex == 0) {
+        if (secindex == 0 || clear_sector_cache) {
+            free(sector_cache);
             sector_cache = (sector_cache_t *)malloc(sizeof(sector_cache_t) * MAX_SEC_CACHE_ENTRIES);
+            clear_sector_cache = false;
+            secindex = 0;
         }
 
         u32 s = 0;

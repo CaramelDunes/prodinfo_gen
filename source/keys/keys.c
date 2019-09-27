@@ -52,6 +52,8 @@ extern int  sd_save_to_file(void *buf, u32 size, const char *filename);
 
 extern hekate_config h_cfg;
 
+extern bool clear_sector_cache;
+
 u32 _key_count = 0, _titlekey_count = 0;
 u32 color_idx = 0;
 sdmmc_storage_t storage;
@@ -73,39 +75,13 @@ u32 start_time, end_time;
 #define SAVE_KEY(name, src, len) _save_key(name, src, len, text_buffer)
 #define SAVE_KEY_FAMILY(name, src, start, count, len) _save_key_family(name, src, start, count, len, text_buffer)
 
-static u8 temp_key[0x10],
-          bis_key[4][0x20] = {0},
-          device_key[0x10] = {0},
-          new_device_key[0x10] = {0},
-          sd_seed[0x10] = {0},
-          // FS-related keys
-          fs_keys[10][0x20] = {0},
-          header_key[0x20] = {0},
-          save_mac_key[0x10] = {0},
-          // other sysmodule sources
-          es_keys[3][0x10] = {0},
-          eticket_rsa_kek[0x10] = {0},
-          ssl_keys[2][0x10] = {0},
-          ssl_rsa_kek[0x10] = {0},
-          // keyblob-derived families
-          keyblob[KB_FIRMWARE_VERSION_600+1][0x90] = {0},
-          keyblob_key[KB_FIRMWARE_VERSION_600+1][0x10] = {0},
-          keyblob_mac_key[KB_FIRMWARE_VERSION_600+1][0x10] = {0},
-          package1_key[KB_FIRMWARE_VERSION_600+1][0x10] = {0},
-          // master key-derived families
-          key_area_key[3][KB_FIRMWARE_VERSION_MAX+1][0x10] = {0},
-          master_kek[KB_FIRMWARE_VERSION_MAX+1][0x10] = {0},
-          master_key[KB_FIRMWARE_VERSION_MAX+1][0x10] = {0},
-          package2_key[KB_FIRMWARE_VERSION_MAX+1][0x10] = {0},
-          titlekek[KB_FIRMWARE_VERSION_MAX+1][0x10] = {0};
-
 // key functions
 static bool  _key_exists(const void *data) { return memcmp(data, zeros, 0x10); };
 static void  _save_key(const char *name, const void *data, u32 len, char *outbuf);
 static void  _save_key_family(const char *name, const void *data, u32 start_key, u32 num_keys, u32 len, char *outbuf);
 static void  _generate_kek(u32 ks, const void *key_source, void *master_key, const void *kek_seed, const void *key_seed);
 // nca functions
-static void *_nca_process(u32 hk_ks1, u32 hk_ks2, FIL *fp, u32 key_offset, u32 len);
+static void *_nca_process(u32 hk_ks1, u32 hk_ks2, FIL *fp, u32 key_offset, u32 len, const u8 key_area_key[3][KB_FIRMWARE_VERSION_MAX+1][0x10]);
 static u32   _nca_fread_ctr(u32 ks, FIL *fp, void *buffer, u32 offset, u32 len, u8 *ctr);
 static void  _update_ctr(u8 *ctr, u32 ofs);
 // titlekey functions
@@ -113,6 +89,32 @@ static bool  _test_key_pair(const void *E, const void *D, const void *N);
 static void  _mgf1_xor(void *masked, u32 masked_size, const void *seed, u32 seed_size);
 
 void dump_keys() {
+    u8  temp_key[0x10],
+        bis_key[4][0x20] = {0},
+        device_key[0x10] = {0},
+        new_device_key[0x10] = {0},
+        sd_seed[0x10] = {0},
+        // FS-related keys
+        fs_keys[10][0x20] = {0},
+        header_key[0x20] = {0},
+        save_mac_key[0x10] = {0},
+        // other sysmodule sources
+        es_keys[3][0x10] = {0},
+        eticket_rsa_kek[0x10] = {0},
+        ssl_keys[0x10] = {0},
+        ssl_rsa_kek[0x10] = {0},
+        // keyblob-derived families
+        keyblob[KB_FIRMWARE_VERSION_600+1][0x90] = {0},
+        keyblob_key[KB_FIRMWARE_VERSION_600+1][0x10] = {0},
+        keyblob_mac_key[KB_FIRMWARE_VERSION_600+1][0x10] = {0},
+        package1_key[KB_FIRMWARE_VERSION_600+1][0x10] = {0},
+        // master key-derived families
+        key_area_key[3][KB_FIRMWARE_VERSION_MAX+1][0x10] = {0},
+        master_kek[KB_FIRMWARE_VERSION_MAX+1][0x10] = {0},
+        master_key[KB_FIRMWARE_VERSION_MAX+1][0x10] = {0},
+        package2_key[KB_FIRMWARE_VERSION_MAX+1][0x10] = {0},
+        titlekek[KB_FIRMWARE_VERSION_MAX+1][0x10] = {0};
+
     display_backlight_brightness(h_cfg.backlight, 1000);
     gfx_clear_partial_grey(0x1B, 0, 1256);
     gfx_con_setpos(0, 0);
@@ -121,6 +123,10 @@ void dump_keys() {
         colors[0], colors[1], colors[2], colors[3], colors[4], colors[5], 0xFFFF00FF, LP_VER_MJ, LP_VER_MN, LP_VER_BF, 0xFFCCCCCC);
 
     tui_sbar(true);
+
+    _key_count = 0;
+    _titlekey_count = 0;
+    color_idx = 0;
 
     start_time = get_tmr_us();
     u32 begin_time = get_tmr_us();
@@ -575,7 +581,7 @@ pkg2_done:
     }
     __attribute__ ((aligned (16))) FATFS emmc_fs;
     if (f_mount(&emmc_fs, "emmc:", 1)) {
-        EPRINTF("Mount Unable.");
+        EPRINTF("Unable to mount system partition.");
         goto key_output;
     }
 
@@ -657,7 +663,7 @@ pkg2_done:
             }
             hash_index = 0;
             // decrypt only what is needed to locate needed keys
-            temp_file = (u8*)_nca_process(5, 4, &fp, start_offset, 0xc0);
+            temp_file = (u8*)_nca_process(5, 4, &fp, start_offset, 0xc0, key_area_key);
             for (u32 i = 0; i <= 0xb0; ) {
                 se_calc_sha256(temp_hash, temp_file + i, 0x10);
                 if (!memcmp(temp_hash, es_hashes_sha256[hash_order[hash_index]], 0x10)) {
@@ -703,11 +709,11 @@ pkg2_done:
             }
             if (!memcmp(pkg1_id->id, "2016", 4))
                 start_offset = 0x449dc;
-            temp_file = (u8*)_nca_process(5, 4, &fp, start_offset, 0x70);
+            temp_file = (u8*)_nca_process(5, 4, &fp, start_offset, 0x70, key_area_key);
             for (u32 i = 0; i <= 0x60; i++) {
                 se_calc_sha256(temp_hash, temp_file + i, 0x10);
                 if (!memcmp(temp_hash, ssl_hashes_sha256[1], 0x10)) {
-                    memcpy(ssl_keys[1], temp_file + i, 0x10);
+                    memcpy(ssl_keys, temp_file + i, 0x10);
                     // only get ssl_rsa_kek_source_x from SSL on 1.0.0
                     // we get it from ES on every other firmware
                     // and it's located oddly distant from ssl_rsa_kek_source_y on >= 6.0.0
@@ -735,11 +741,11 @@ pkg2_done:
         _generate_kek(7, es_keys[1], master_key[0], temp_key, NULL);
         se_aes_crypt_block_ecb(7, 0, eticket_rsa_kek, es_keys[0]);
     }
-    if (_key_exists(ssl_keys[1]) && _key_exists(es_keys[2]) && _key_exists(master_key[0])) {
+    if (_key_exists(ssl_keys) && _key_exists(es_keys[2]) && _key_exists(master_key[0])) {
         for (u32 i = 0; i < 0x10; i++)
             temp_key[i] = aes_kek_generation_source[i] ^ aes_kek_seed_01[i];
         _generate_kek(7, es_keys[2], master_key[0], temp_key, NULL);
-        se_aes_crypt_block_ecb(7, 0, ssl_rsa_kek, ssl_keys[1]);
+        se_aes_crypt_block_ecb(7, 0, ssl_rsa_kek, ssl_keys);
     }
 
     if (memcmp(pkg1_id->id, "2016", 4)) {
@@ -786,7 +792,7 @@ get_titlekeys:
         gfx_printf("%k Minerva not found!\n This may take up to a minute...\n", colors[(color_idx++) % 6]);
         gfx_printf(" For better performance, download Hekate\n and put bootloader/sys/libsys_minerva.bso\n on SD.\n");
     }
-    gfx_printf("%kTitlekeys...     ", colors[(color_idx++) % 6]);
+    gfx_printf("%kTitlekeys...     ", colors[color_idx % 6]);
     u32 save_x = gfx_con.x, save_y = gfx_con.y;
     gfx_printf("\n");
 
@@ -949,8 +955,8 @@ get_titlekeys:
 
 dismount:
     f_mount(NULL, "emmc:", 1);
+    clear_sector_cache = true;
     nx_emmc_gpt_free(&gpt);
-    emummc_storage_end(&storage);
 
 key_output: ;
     char *text_buffer = (char *)malloc(_titlekey_count * 68 < 0x3000 ? 0x3000 : _titlekey_count * 68 + 1);
@@ -1003,7 +1009,7 @@ key_output: ;
     SAVE_KEY("secure_boot_key", sbk, 0x10);
     SAVE_KEY("ssl_rsa_kek", ssl_rsa_kek, 0x10);
     SAVE_KEY("ssl_rsa_kek_source_x", es_keys[2], 0x10);
-    SAVE_KEY("ssl_rsa_kek_source_y", ssl_keys[1], 0x10);
+    SAVE_KEY("ssl_rsa_kek_source_y", ssl_keys, 0x10);
     SAVE_KEY_FAMILY("titlekek", titlekek, 0, MAX_KEY, 0x10);
     SAVE_KEY("titlekek_source", titlekek_source, 0x10);
     SAVE_KEY("tsec_key", tsec_keys, 0x10);
@@ -1014,7 +1020,6 @@ key_output: ;
 
     end_time = get_tmr_us();
     gfx_printf("\n%k  Found %d keys.\n\n", colors[(color_idx++) % 6], _key_count);
-    _key_count = 0;
     gfx_printf("%kLockpick totally done in %d us\n\n", colors[(color_idx++) % 6], end_time - begin_time);
     gfx_printf("%kFound through master_key_%02x.\n\n", colors[(color_idx++) % 6], MAX_KEY - 1);
 
@@ -1051,7 +1056,7 @@ key_output: ;
 
 out_wait:
     h_cfg.emummc_force_disable = emummc_load_cfg();
-    sd_unmount();
+    emummc_storage_end(&storage);
     gfx_printf("\n%kPress any key to return to the main menu.", colors[(color_idx) % 6], colors[(color_idx + 1) % 6], colors[(color_idx + 2) % 6]);
     btn_wait();
 }
@@ -1093,7 +1098,7 @@ static inline u32 _read_le_u32(const void *buffer, u32 offset) {
            (*(u8*)(buffer + offset + 3) << 0x18);
 }
 
-static void *_nca_process(u32 hk_ks1, u32 hk_ks2, FIL *fp, u32 key_offset, u32 len) {
+static void *_nca_process(u32 hk_ks1, u32 hk_ks2, FIL *fp, u32 key_offset, u32 len, const u8 key_area_key[3][KB_FIRMWARE_VERSION_MAX+1][0x10]) {
     u32 read_bytes = 0, crypt_offset, read_size, num_files, string_table_size, rodata_offset;
 
     u8 *temp_file = (u8*)malloc(0x400),
