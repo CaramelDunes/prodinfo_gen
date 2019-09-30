@@ -959,7 +959,7 @@ dismount:
     nx_emmc_gpt_free(&gpt);
 
 key_output: ;
-    char *text_buffer = (char *)malloc(_titlekey_count * 68 < 0x3000 ? 0x3000 : _titlekey_count * 68 + 1);
+    char *text_buffer = (char *)calloc(1, _titlekey_count * 68 < 0x3000 ? 0x3000 : _titlekey_count * 68 + 1);
 
     SAVE_KEY("aes_kek_generation_source", aes_kek_generation_source, 0x10);
     SAVE_KEY("aes_key_generation_source", aes_key_generation_source, 0x10);
