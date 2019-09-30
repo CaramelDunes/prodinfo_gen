@@ -6,8 +6,9 @@ Due to changes imposed by firmware 7.0.0, Lockpick homebrew can no longer derive
 
 Usage
 =
-* Launch Lockpick_RCM.bin using your favorite payload injector
-* Upon completion, keys will be saved to `/switch/prod.keys` on SD
+* It is highly recommended, but not required, to place Minerva on SD from the latest [Hekate](https://github.com/CTCaer/hekate/releases) for best performance, especially while dumping titlekeys - the file and path is `/bootloader/sys/libsys_minerva.bso`
+* Launch Lockpick_RCM.bin using your favorite payload injector or chainloader
+* Upon completion, keys will be saved to `/switch/prod.keys` and titlekeys to `/switch/title.keys` on SD
 * If the console has Firmware 7.x or higher, the `/sept/` folder from [Atmosphère](https://github.com/Atmosphere-NX/Atmosphere/releases) or [Kosmos](https://github.com/AtlasNX/Kosmos/releases) release zip must be present on SD or else only keyblob master key derivation is possible (ie. up to `master_key_05` only)
 
 Building
@@ -17,7 +18,3 @@ Install [devkitARM](https://devkitpro.org/) and run `make`.
 Massive Thanks to CTCaer!
 =
 This software is heavily based on [Hekate](https://github.com/CTCaer/hekate). Beyond that, CTCaer was exceptionally helpful in the development of this project, lending loads of advice, expertise, and humor.
-
-Known Issues
-=
-* Chainloading from SX will hang immediately due to quirks in their hwinit code, please launch payload directly
