@@ -95,7 +95,7 @@ void dump_keys() {
         new_device_key[0x10] = {0},
         sd_seed[0x10] = {0},
         // FS-related keys
-        fs_keys[10][0x20] = {0},
+        fs_keys[13][0x20] = {0},
         header_key[0x20] = {0},
         save_mac_key[0x10] = {0},
         // other sysmodule sources
@@ -435,9 +435,9 @@ get_tsec: ;
     pkg2_decompress_kip(ki, 2 | 4); // we only need .rodata and .data
     TPRINTFARGS("%kDecompress FS...", colors[(color_idx++) % 6]);
 
-    u8  hash_index = 0, hash_max = 9, hash_order[10],
-        key_lengths[10] = {0x10, 0x20, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x20, 0x20};
-    u32 start_offset = 0, hks_offset_from_end = ki->kip1->sections[2].size_decomp, alignment = 1;
+    u8  hash_index = 0, hash_max = 11, hash_order[13],
+        key_lengths[13] = {0x10, 0x20, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x20, 0x10, 0x20, 0x20};
+    u32 start_offset = 0, hks_offset_from_end = ki->kip1->sections[2].size_decomp, alignment = 0x10;
 
     // the FS keys appear in different orders
     if (!memcmp(pkg1_id->id, "2016", 4)) {
@@ -448,16 +448,13 @@ get_tsec: ;
         hash_index = 1;
         start_offset = 0x1b517;
         hks_offset_from_end = 0x125bc2;
-        alignment = 0x10;
         u8 temp[7] = {2, 3, 4, 0, 5, 6, 1};
         memcpy(hash_order, temp, 7);
     } else {
         // 2.0.0 - 8.0.0
-        alignment = 0x40;
         switch (pkg1_id->kb) {
         case KB_FIRMWARE_VERSION_100_200:
             start_offset = 0x1d226;
-            alignment = 0x10;
             hks_offset_from_end -= 0x26fe;
             break;
         case KB_FIRMWARE_VERSION_300:
@@ -475,7 +472,6 @@ get_tsec: ;
         case KB_FIRMWARE_VERSION_500:
             start_offset = 0x1f3b4;
             hks_offset_from_end -= 0x465b;
-            alignment = 0x20;
             break;
         case KB_FIRMWARE_VERSION_600:
         case KB_FIRMWARE_VERSION_620:
@@ -497,11 +493,15 @@ get_tsec: ;
         }
 
         if (pkg1_id->kb <= KB_FIRMWARE_VERSION_500) {
-            u8 temp[10] = {2, 3, 4, 0, 5, 7, 9, 8, 6, 1};
-            memcpy(hash_order, temp, 10);
+            u8 temp[12] = {2, 3, 4, 0, 5, 7, 10, 12, 11, 6, 8, 1};
+            memcpy(hash_order, temp, 12);
+        } else if (pkg1_id->kb <= KB_FIRMWARE_VERSION_620) {
+            u8 temp[12] = {6, 5, 10, 7, 8, 2, 3, 4, 0, 12, 11, 1};
+            memcpy(hash_order, temp, 12);
         } else {
-            u8 temp[10] = {6, 5, 7, 2, 3, 4, 0, 9, 8, 1};
-            memcpy(hash_order, temp, 10);
+            u8 temp[13] = {6, 5, 10, 7, 8, 2, 3, 4, 0, 12, 11, 9, 1};
+            memcpy(hash_order, temp, 13);
+            hash_max = 12;
         }
     }
 
@@ -1002,9 +1002,12 @@ key_output: ;
     SAVE_KEY("save_mac_kek_source", fs_keys[5], 0x10);
     SAVE_KEY("save_mac_key", save_mac_key, 0x10);
     SAVE_KEY("save_mac_key_source", fs_keys[6], 0x10);
-    SAVE_KEY("sd_card_kek_source", fs_keys[7], 0x10);
-    SAVE_KEY("sd_card_nca_key_source", fs_keys[8], 0x20);
-    SAVE_KEY("sd_card_save_key_source", fs_keys[9], 0x20);
+    SAVE_KEY("save_mac_sd_card_kek_source", fs_keys[7], 0x10);
+    SAVE_KEY("save_mac_sd_card_key_source", fs_keys[8], 0x10);
+    SAVE_KEY("sd_card_custom_storage_key_source", fs_keys[9], 0x20);
+    SAVE_KEY("sd_card_kek_source", fs_keys[10], 0x10);
+    SAVE_KEY("sd_card_nca_key_source", fs_keys[11], 0x20);
+    SAVE_KEY("sd_card_save_key_source", fs_keys[12], 0x20);
     SAVE_KEY("sd_seed", sd_seed, 0x10);
     SAVE_KEY("secure_boot_key", sbk, 0x10);
     SAVE_KEY("ssl_rsa_kek", ssl_rsa_kek, 0x10);

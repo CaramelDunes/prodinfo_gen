@@ -40,6 +40,9 @@
 #include "diskio.h"		/* Declarations of device I/O functions */
 #include "../../gfx/gfx.h"
 
+#pragma GCC push_options
+#pragma GCC target ("thumb")
+
 #define EFSPRINTF(text, ...) print_error(); gfx_printf("%k"text"%k\n", 0xFFFFFF00, 0xFFFFFFFF);
 //#define EFSPRINTF(...)
 
@@ -6647,3 +6650,5 @@ FRESULT f_setcp (
 	return FR_OK;
 }
 #endif	/* FF_CODE_PAGE == 0 */
+
+#pragma GCC pop_options
