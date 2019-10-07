@@ -175,7 +175,8 @@ void dump_keys() {
     if (pkg1_id->kb >= KB_FIRMWARE_VERSION_700) {
         sd_mount();
         if (!f_stat("sd:/sept/payload.bak", NULL)) {
-            f_unlink("sd:/sept/payload.bin");
+            if (f_unlink("sd:/sept/payload.bin"))
+                gfx_printf("%kNote: no payload.bin already in /sept\n", colors[(color_idx++) % 6]);
             f_rename("sd:/sept/payload.bak", "sd:/sept/payload.bin");
         }
 
@@ -188,16 +189,27 @@ void dump_keys() {
                 goto get_tsec;
             }
             // backup post-reboot payload
-            if (!f_stat("sd:/sept/payload.bin", NULL))
-                f_rename("sd:/sept/payload.bin", "sd:/sept/payload.bak");
+            if (!f_stat("sd:/sept/payload.bin", NULL)) {
+                if (f_rename("sd:/sept/payload.bin", "sd:/sept/payload.bak")) {
+                    EPRINTF("Unable to backup payload.bin.");
+                    goto out_wait;
+                }
+            }
             // write self to payload.bin to run again when sept finishes
-            f_open(&fp, "sd:/sept/payload.bin", FA_CREATE_NEW | FA_WRITE);
             u32 payload_size = *(u32 *)(IPL_LOAD_ADDR + 0x84) - IPL_LOAD_ADDR;
-            f_write(&fp, (u8 *)IPL_LOAD_ADDR, payload_size, NULL);
+            if (f_open(&fp, "sd:/sept/payload.bin", FA_CREATE_NEW | FA_WRITE)) {
+                EPRINTF("Unable to open /sept/payload.bin to write.");
+                goto out_wait;
+            }
+            if (f_write(&fp, (u8 *)IPL_LOAD_ADDR, payload_size, NULL)) {
+                EPRINTF("Unable to write self to /sept/payload.bin.");
+                fclose(&fp);
+                goto out_wait;
+            }
             f_close(&fp);
             gfx_printf("%k\nFirmware 7.x or higher detected.\n\n", colors[(color_idx++) % 6]);
             gfx_printf("%kRenamed /sept/payload.bin", colors[(color_idx++) % 6]);
-            gfx_printf("\n     to /sept/payload.bak\n\n", colors[(color_idx++) % 6]);
+            gfx_printf("\n     to /sept/payload.bak\n\n");
             gfx_printf("%kCopied self to /sept/payload.bin\n", colors[(color_idx++) % 6]);
             sdmmc_storage_end(&storage);
             if (!reboot_to_sept((u8 *)tsec_ctxt.fw, tsec_ctxt.size, pkg1_id->kb))
@@ -959,7 +971,8 @@ dismount:
     nx_emmc_gpt_free(&gpt);
 
 key_output: ;
-    char *text_buffer = (char *)calloc(1, _titlekey_count * 68 < 0x3000 ? 0x3000 : _titlekey_count * 68 + 1);
+    u32 text_buffer_size = _titlekey_count * 68 < 0x3000 ? 0x3000 : _titlekey_count * 68 + 1;
+    char *text_buffer = (char *)calloc(1, text_buffer_size);
 
     SAVE_KEY("aes_kek_generation_source", aes_kek_generation_source, 0x10);
     SAVE_KEY("aes_key_generation_source", aes_key_generation_source, 0x10);
@@ -1026,7 +1039,10 @@ key_output: ;
     gfx_printf("%kLockpick totally done in %d us\n\n", colors[(color_idx++) % 6], end_time - begin_time);
     gfx_printf("%kFound through master_key_%02x.\n\n", colors[(color_idx++) % 6], MAX_KEY - 1);
 
-    f_mkdir("sd:/switch");
+    if (f_mkdir("sd:/switch")) {
+        EPRINTF("Unable to create /switch folder on SD.\nNo keyfiles written.");
+        goto free_buffers;
+    }
     char keyfile_path[30] = "sd:/switch/";
     if (!(fuse_read_odm(4) & 3))
         sprintf(&keyfile_path[11], "prod.keys");
@@ -1038,8 +1054,8 @@ key_output: ;
         EPRINTF("Unable to save keys to SD.");
 
     if (_titlekey_count == 0)
-        goto out_wait;
-    memset(text_buffer, 0, _titlekey_count * 68 + 1);
+        goto free_buffers;
+    memset(text_buffer, 0, text_buffer_size);
     for (u32 i = 0; i < _titlekey_count; i++) {
         for (u32 j = 0; j < 0x10; j++)
             sprintf(&text_buffer[i * 68 + j * 2], "%02x", rights_ids[i * 0x10 + j]);
@@ -1053,6 +1069,8 @@ key_output: ;
         gfx_printf("%kWrote %d bytes to %s\n", colors[(color_idx++) % 6], (u32)fno.fsize, keyfile_path);
     } else
         EPRINTF("Unable to save titlekeys to SD.");
+
+free_buffers:
     free(rights_ids);
     free(titlekeys);
     free(text_buffer);
