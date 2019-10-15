@@ -203,7 +203,7 @@ void dump_keys() {
             }
             if (f_write(&fp, (u8 *)IPL_LOAD_ADDR, payload_size, NULL)) {
                 EPRINTF("Unable to write self to /sept/payload.bin.");
-                fclose(&fp);
+                f_close(&fp);
                 goto out_wait;
             }
             f_close(&fp);
