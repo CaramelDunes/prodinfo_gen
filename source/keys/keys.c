@@ -1039,12 +1039,7 @@ key_output: ;
     gfx_printf("%kLockpick totally done in %d us\n\n", colors[(color_idx++) % 6], end_time - begin_time);
     gfx_printf("%kFound through master_key_%02x.\n\n", colors[(color_idx++) % 6], MAX_KEY - 1);
 
-    FRESULT dir_rc = FR_OK;
-    dir_rc = f_mkdir("sd:/switch");
-    if (dir_rc != FR_EXIST && dir_rc != FR_OK) {
-        EPRINTF("Unable to create /switch folder on SD.\nNo keyfiles written.");
-        goto free_buffers;
-    }
+    f_mkdir("sd:/switch");
     char keyfile_path[30] = "sd:/switch/";
     if (!(fuse_read_odm(4) & 3))
         sprintf(&keyfile_path[11], "prod.keys");
