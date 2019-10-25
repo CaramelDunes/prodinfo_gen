@@ -1130,8 +1130,10 @@ static void *_nca_process(u32 hk_ks1, u32 hk_ks2, FIL *fp, u32 key_offset, u32 l
 
     u8 *temp_file = (u8*)malloc(0x400),
         ctr[0x10] = {0};
-    if (f_lseek(fp, 0x200) || f_read(fp, temp_file, 0x400, &read_bytes) || read_bytes != 0x400)
+    if (f_lseek(fp, 0x200) || f_read(fp, temp_file, 0x400, &read_bytes) || read_bytes != 0x400) {
+        free(temp_file);
         return NULL;
+    }
     se_aes_xts_crypt(hk_ks1, hk_ks2, 0, 1, temp_file, temp_file, 0x200, 2);
     // both 1.x and 2.x use master_key_00
     temp_file[0x20] -= temp_file[0x20] ? 1 : 0;
