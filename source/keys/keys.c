@@ -135,7 +135,10 @@ void dump_keys() {
     tsec_ctxt_t tsec_ctxt;
     sdmmc_t sdmmc;
 
-    emummc_storage_init_mmc(&storage, &sdmmc);
+    if (!emummc_storage_init_mmc(&storage, &sdmmc)) {
+        EPRINTF("Unable to init MMC.");
+        goto out_wait;
+    }
     TPRINTFARGS("%kMMC init...     ", colors[(color_idx++) % 6]);
 
     // Read package1.
