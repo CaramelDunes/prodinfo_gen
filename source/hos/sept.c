@@ -107,8 +107,10 @@ int reboot_to_sept(const u8 *tsec_fw, const u32 tsec_size, const u32 kb)
 
 	tmp_cfg->boot_cfg |= BOOT_CFG_SEPT_RUN;
 
-	if (f_open(&fp, "sd:/sept/payload.bin", FA_READ | FA_WRITE))
+	if (f_open(&fp, "sd:/sept/payload.bin", FA_READ | FA_WRITE)) {
+		free(tmp_cfg);
 		goto error;
+	}
 
 	f_lseek(&fp, PATCHED_RELOC_SZ);
 	f_write(&fp, tmp_cfg, sizeof(boot_cfg_t), NULL);
