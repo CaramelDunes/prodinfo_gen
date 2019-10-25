@@ -543,6 +543,7 @@ get_tsec: ;
         }
     }
 pkg2_done:
+    free(ki->kip1);
     free(pkg2);
     free(ki);
 
