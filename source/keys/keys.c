@@ -975,8 +975,13 @@ dismount:
     nx_emmc_gpt_free(&gpt);
 
 key_output: ;
+    char *text_buffer = NULL;
+    if (!sd_mount()) {
+        EPRINTF("Unable to mount SD.");
+        goto free_buffers;
+    }
     u32 text_buffer_size = _titlekey_count * 68 < 0x3000 ? 0x3000 : _titlekey_count * 68 + 1;
-    char *text_buffer = (char *)calloc(1, text_buffer_size);
+    text_buffer = (char *)calloc(1, text_buffer_size);
 
     SAVE_KEY("aes_kek_generation_source", aes_kek_generation_source, 0x10);
     SAVE_KEY("aes_key_generation_source", aes_key_generation_source, 0x10);
@@ -1049,7 +1054,7 @@ key_output: ;
         sprintf(&keyfile_path[11], "prod.keys");
     else
         sprintf(&keyfile_path[11], "dev.keys");
-    if (sd_mount() && !sd_save_to_file(text_buffer, strlen(text_buffer), keyfile_path) && !f_stat(keyfile_path, &fno)) {
+    if (!sd_save_to_file(text_buffer, strlen(text_buffer), keyfile_path) && !f_stat(keyfile_path, &fno)) {
         gfx_printf("%kWrote %d bytes to %s\n", colors[(color_idx++) % 6], (u32)fno.fsize, keyfile_path);
     } else
         EPRINTF("Unable to save keys to SD.");
@@ -1066,7 +1071,7 @@ key_output: ;
         sprintf(&text_buffer[i * 68 + 0x43], "\n");
     }
     sprintf(&keyfile_path[11], "title.keys");
-    if (sd_mount() && !sd_save_to_file(text_buffer, strlen(text_buffer), keyfile_path) && !f_stat(keyfile_path, &fno)) {
+    if (!sd_save_to_file(text_buffer, strlen(text_buffer), keyfile_path) && !f_stat(keyfile_path, &fno)) {
         gfx_printf("%kWrote %d bytes to %s\n", colors[(color_idx++) % 6], (u32)fno.fsize, keyfile_path);
     } else
         EPRINTF("Unable to save titlekeys to SD.");
