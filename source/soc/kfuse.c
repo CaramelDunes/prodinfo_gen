@@ -17,6 +17,7 @@
 #include "../soc/kfuse.h"
 #include "../soc/clock.h"
 #include "../soc/t210.h"
+#include "../utils/util.h"
 
 int kfuse_read(u32 *buf)
 {
