@@ -83,7 +83,7 @@ static void _heap_free(heap_t *heap, u32 addr)
 	hnode_t *node = (hnode_t *)(addr - sizeof(hnode_t));
 	node->used = 0;
 	node = heap->first;
-	while (node)
+	while (1)
 	{
 		if (!node->used)
 		{
@@ -95,7 +95,14 @@ static void _heap_free(heap_t *heap, u32 addr)
 					node->next->prev = node->prev;
 			}
 		}
-		node = node->next;
+		if (node->next)
+			node = node->next;
+		else
+		{
+			node->size = -1;
+			break;
+		}
+		
 	}
 }
 
@@ -114,7 +121,7 @@ void *malloc(u32 size)
 void *calloc(u32 num, u32 size)
 {
 	void *res = (void *)_heap_alloc(&_heap, num * size, sizeof(hnode_t));
-	memset(res, 0, num * size);
+	memset(res, 0, ALIGN(num * size, sizeof(hnode_t)));
 	return res;
 }
 
