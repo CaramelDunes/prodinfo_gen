@@ -94,17 +94,15 @@ static int _se_wait()
 
 static int _se_execute(u32 op, void *dst, u32 dst_size, const void *src, u32 src_size)
 {
-	se_ll_t *ll_dst = NULL, *ll_src = NULL;
+	se_ll_t *ll_dst = (se_ll_t *)0xECFFFFE0, *ll_src = (se_ll_t *)0xECFFFFF0;
 
 	if (dst)
 	{
-		ll_dst = (se_ll_t *)malloc(sizeof(se_ll_t));
 		_se_ll_init(ll_dst, (u32)dst, dst_size);
 	}
 
 	if (src)
 	{
-		ll_src = (se_ll_t *)malloc(sizeof(se_ll_t));
 		_se_ll_init(ll_src, (u32)src, src_size);
 	}
 
@@ -119,11 +117,6 @@ static int _se_execute(u32 op, void *dst, u32 dst_size, const void *src, u32 src
 	int res = _se_wait();
 
 	bpmp_mmu_maintenance(BPMP_MMU_MAINT_CLN_INV_WAY);
-
-	if (src)
-		free(ll_src);
-	if (dst)
-		free(ll_dst);
 
 	return res;
 }
@@ -428,7 +421,7 @@ int se_calc_sha256(void *dst, const void *src, u32 src_size)
 	int res;
 	// Setup config for SHA256, size = BITS(src_size).
 	SE(SE_CONFIG_REG_OFFSET) = SE_CONFIG_ENC_MODE(MODE_SHA256) | SE_CONFIG_ENC_ALG(ALG_SHA) | SE_CONFIG_DST(DST_HASHREG);
-	SE(SE_SHA_CONFIG_REG_OFFSET) = SHA_ENABLE;
+	SE(SE_SHA_CONFIG_REG_OFFSET) = SHA_INIT_ENABLE;
 	SE(SE_SHA_MSG_LENGTH_REG_OFFSET) = (u32)(src_size << 3);
 	SE(SE_SHA_MSG_LENGTH_REG_OFFSET + 4 * 1) = 0;
 	SE(SE_SHA_MSG_LENGTH_REG_OFFSET + 4 * 2) = 0;
@@ -446,5 +439,48 @@ int se_calc_sha256(void *dst, const void *src, u32 src_size)
 	for (u32 i = 0; i < 8; i++)
 		dst32[i] = byte_swap_32(SE(SE_HASH_RESULT_REG_OFFSET + (i << 2)));
 
+	return res;
+}
+
+int se_calc_hmac_sha256(void *dst, const void *src, u32 src_size, const void *key, u32 key_size) {
+	int res = 0;
+	u8 *secret = (u8 *)malloc(0x40);
+	u8 *ipad = (u8 *)malloc(0x40 + src_size);
+	u8 *opad = (u8 *)malloc(0x60);
+
+	if (key_size > 0x40)
+	{
+		if (!se_calc_sha256(secret, key, key_size))
+			goto out;
+		memset(secret + 0x20, 0, 0x20);
+	}
+	else
+	{
+		memcpy(secret, key, key_size);
+		memset(secret + key_size, 0, 0x40 - key_size);
+	}
+
+	u32 *secret32 = (u32 *)secret;
+	u32 *ipad32 = (u32 *)ipad;
+	u32 *opad32 = (u32 *)opad;
+	for (u32 i = 0; i < 0x10; i++)
+	{
+		ipad32[i] = secret32[i] ^ 0x36363636;
+		opad32[i] = secret32[i] ^ 0x5C5C5C5C;
+	}
+
+	memcpy(ipad + 0x40, src, src_size);
+	if (!se_calc_sha256(dst, ipad, 0x40 + src_size))
+		goto out;
+	memcpy(opad + 0x40, dst, 0x20);
+	if (!se_calc_sha256(dst, opad, 0x60))
+		goto out;
+
+	res = 1;
+
+out:;
+	free(secret);
+	free(ipad);
+	free(opad);
 	return res;
 }
