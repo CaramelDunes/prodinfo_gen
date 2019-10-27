@@ -43,6 +43,7 @@
 #include "../utils/util.h"
 
 #include "key_sources.inl"
+#include "save.h"
 
 #include <string.h>
 
@@ -114,6 +115,8 @@ void dump_keys() {
         master_key[KB_FIRMWARE_VERSION_MAX+1][0x10] = {0},
         package2_key[KB_FIRMWARE_VERSION_MAX+1][0x10] = {0},
         titlekek[KB_FIRMWARE_VERSION_MAX+1][0x10] = {0};
+
+    sd_mount();
 
     display_backlight_brightness(h_cfg.backlight, 1000);
     gfx_clear_partial_grey(0x1B, 0, 1256);
@@ -604,6 +607,8 @@ pkg2_done:
     DIR dir;
     FILINFO fno;
     FIL fp;
+    save_ctx_t *save_ctx = NULL;
+
     // sysmodule NCAs only ever have one section (exefs) so 0x600 is sufficient
     u8 *dec_header = (u8*)malloc(0x600);
     char path[100] = "emmc:/Contents/registered";
@@ -782,6 +787,7 @@ pkg2_done:
     }
     f_close(&fp);
 
+    // this file is so small that parsing the savedata properly would take longer
     if (f_open(&fp, "emmc:/save/8000000000000043", FA_READ | FA_OPEN_EXISTING)) {
         EPRINTF("Unable to open ns_appman save.\nSkipping SD seed.");
         goto get_titlekeys;
@@ -804,13 +810,9 @@ get_titlekeys:
     if (!_key_exists(eticket_rsa_kek))
         goto dismount;
 
-    if (!minerva_cfg) {
-        gfx_printf("%k Minerva not found!\n This may take up to a minute...\n", colors[(color_idx++) % 6]);
-        gfx_printf(" For better performance, download Hekate\n and put bootloader/sys/libsys_minerva.bso\n on SD.\n");
-    }
-    gfx_printf("%kTitlekeys...     ", colors[color_idx % 6]);
+    gfx_printf("%kTitlekeys...     ", colors[(color_idx++) % 6]);
     u32 save_x = gfx_con.x, save_y = gfx_con.y;
-    gfx_printf("\n");
+    gfx_printf("\n%kCommon...       ", colors[color_idx % 6]);
 
     u8 null_hash[0x20] = {
         0xE3, 0xB0, 0xC4, 0x42, 0x98, 0xFC, 0x1C, 0x14, 0x9A, 0xFB, 0xF4, 0xC8, 0x99, 0x6F, 0xB9, 0x24,
@@ -819,7 +821,7 @@ get_titlekeys:
     se_aes_key_set(8, bis_key[0] + 0x00, 0x10);
     se_aes_key_set(9, bis_key[0] + 0x10, 0x10);
 
-    u32 buf_size = 0x80000;
+    u32 buf_size = 0x4000;
     u8 *buffer = (u8 *)malloc(buf_size);
 
     u8 keypair[0x230] = {0};
@@ -857,63 +859,83 @@ get_titlekeys:
 
     se_rsa_key_set(0, N, 0x100, D, 0x100);
 
-    if (f_stat("emmc:/save/80000000000000E1", &fno)) {
-        EPRINTF("Unable to stat ES save 1. Skipping.");
-        free(buffer);
-        goto dismount;
-    }
-    u64 total_size = fno.fsize;
-    if (f_stat("emmc:/save/80000000000000E2", &fno)) {
-        EPRINTF("Unable to stat ES save 2. Skipping.");
-        free(buffer);
-        goto dismount;
-    }
-    total_size += fno.fsize;
-    u32 br;
+    u32 br = buf_size;
+    u32 file_tkey_count = 0;
     u64 total_br = 0;
-    rights_ids = (u8 *)malloc(0x400000);
-    titlekeys = (u8 *)malloc(0x400000);
+    rights_ids = (u8 *)malloc(0x40000);
+    titlekeys = (u8 *)malloc(0x40000);
+    save_ctx = calloc(1, sizeof(save_ctx_t));
     u8 M[0x100];
     if (f_open(&fp, "emmc:/save/80000000000000E1", FA_READ | FA_OPEN_EXISTING)) {
         EPRINTF("Unable to open ES save 1. Skipping.");
         free(buffer);
         goto dismount;
     }
-    f_lseek(&fp, 0x8000);
+
     u32 pct = 0, last_pct = 0;
     tui_pbar(save_x, save_y, pct, COLOR_GREEN, 0xFF155500);
 
-    while (!f_read(&fp, buffer, buf_size, &br)) {
+    save_ctx->file = &fp;
+    save_ctx->tool_ctx.action = 0;
+    memcpy(save_ctx->save_mac_key, save_mac_key, 0x10);
+    save_process(save_ctx);
+
+    char ticket_bin_path[SAVE_FS_LIST_MAX_NAME_LENGTH] = "/ticket.bin";
+    char ticket_list_bin_path[SAVE_FS_LIST_MAX_NAME_LENGTH] = "/ticket_list.bin";
+    allocation_table_storage_ctx_t fat_storage;
+    save_fs_list_entry_t entry = {0, "", {0}, 0};
+    if (!save_hierarchical_file_table_get_file_entry_by_path(&save_ctx->save_filesystem_core.file_table, ticket_list_bin_path, &entry)) {
+        EPRINTF("Unable to locate ticket_list.bin in e1.");
+        goto dismount;
+    }
+    save_open_fat_storage(&save_ctx->save_filesystem_core, &fat_storage, entry.value.save_file_info.start_block);
+    while (br == buf_size && total_br < entry.value.save_file_info.length) {
+        br = save_allocation_table_storage_read(&fat_storage, buffer, total_br, buf_size);
+        if (buffer[0] == 0) break;
         total_br += br;
-        for (u32 i = 0; i < br; i += 0x4000) {
-            pct = (u32)((total_br + i) * 100 / total_size);
+        minerva_periodic_training();
+        for (u32 j = 0; j < buf_size; j += 0x20) {
+            if (buffer[j] == 0xff && buffer[j+1] == 0xff && buffer[j+2] == 0xff && buffer[j+3] == 0xff) break;
+            file_tkey_count++;
+        }
+    }
+    if (!save_hierarchical_file_table_get_file_entry_by_path(&save_ctx->save_filesystem_core.file_table, ticket_bin_path, &entry)) {
+        EPRINTF("Unable to locate ticket.bin in e1.");
+        goto dismount;
+    }
+    save_open_fat_storage(&save_ctx->save_filesystem_core, &fat_storage, entry.value.save_file_info.start_block);
+    total_br = 0;
+    while (br == buf_size && total_br < entry.value.save_file_info.length) {
+        br = save_allocation_table_storage_read(&fat_storage, buffer, total_br, buf_size);
+        if (buffer[0] == 0) break;
+        total_br += br;
+        for (u32 j = 0; j < buf_size; j += 0x400) {
+            pct = _titlekey_count * 100 / file_tkey_count;
             if (pct > last_pct && pct <= 100) {
                 last_pct = pct;
                 tui_pbar(save_x, save_y, pct, COLOR_GREEN, 0xFF155500);
             }
-            for (u32 j = i; j < i + 0x4000; j += 0x400) {
-                minerva_periodic_training();
-                if (buffer[j] == 4 && buffer[j+1] == 0 && buffer[j+2] == 1 && buffer[j+3] == 0) {
-                    u32 k = 0;
-                    bool titlekey_found = false;
-                    for (; k < _titlekey_count; k++) {
-                        if (!memcmp(rights_ids + 0x10 * k, buffer + j + 0x2a0, 0x10)) {
-                            titlekey_found = true;
-                            break;
-                        }
-                    }
-                    if (titlekey_found)
-                        continue;
-                    memcpy(rights_ids + 0x10 * _titlekey_count, buffer + j + 0x2a0, 0x10);
-                    memcpy(titlekeys + 0x10 * _titlekey_count, buffer + j + 0x180, 0x10);
-                    _titlekey_count++;
-                } else {
-                    break;
-                }
+            minerva_periodic_training();
+            if (buffer[j] == 4 && buffer[j+1] == 0 && buffer[j+2] == 1 && buffer[j+3] == 0) {
+                memcpy(rights_ids + 0x10 * _titlekey_count, buffer + j + 0x2a0, 0x10);
+                memcpy(titlekeys + 0x10 * _titlekey_count, buffer + j + 0x180, 0x10);
+                _titlekey_count++;
+            } else {
+                break;
             }
         }
-        if (br < buf_size) break;
     }
+    tui_pbar(save_x, save_y, 100, COLOR_GREEN, 0xFF155500);
+    f_close(&fp);
+    save_free_contexts(save_ctx);
+    memset(save_ctx, 0, sizeof(save_ctx_t));
+    memset(&fat_storage, 0, sizeof(allocation_table_storage_ctx_t));
+
+    gfx_con_setpos(0, save_y);
+    TPRINTFARGS("\n%kCommon...       ", colors[(color_idx++) % 6]);
+    save_x = gfx_con.x + 16 * 17;
+    save_y = gfx_con.y;
+    gfx_printf("\n%kPersonalized... ", colors[color_idx % 6]);
 
     u32 common_titlekey_count = _titlekey_count;
     if (f_open(&fp, "emmc:/save/80000000000000E2", FA_READ | FA_OPEN_EXISTING)) {
@@ -921,55 +943,82 @@ get_titlekeys:
         free(buffer);
         goto dismount;
     }
-    f_lseek(&fp, 0x8000);
-    while (!f_read(&fp, buffer, buf_size, &br)) {
+
+    save_ctx->file = &fp;
+    save_ctx->tool_ctx.action = 0;
+    memcpy(save_ctx->save_mac_key, save_mac_key, 0x10);
+    save_process(save_ctx);
+
+    if (!save_hierarchical_file_table_get_file_entry_by_path(&save_ctx->save_filesystem_core.file_table, ticket_list_bin_path, &entry)) {
+        EPRINTF("Unable to locate ticket_list.bin in e2.");
+        goto dismount;
+    }
+    save_open_fat_storage(&save_ctx->save_filesystem_core, &fat_storage, entry.value.save_file_info.start_block);
+
+    total_br = 0;
+    file_tkey_count = 0;
+    while (br == buf_size && total_br < entry.value.save_file_info.length) {
+        br = save_allocation_table_storage_read(&fat_storage, buffer, total_br, buf_size);
+        if (buffer[0] == 0) break;
         total_br += br;
-        for (u32 i = 0; i < br; i += 0x4000) {
-            pct = (u32)((total_br + i) * 100 / total_size);
+        minerva_periodic_training();
+        for (u32 j = 0; j < buf_size; j += 0x20) {
+            if (buffer[j] == 0xff && buffer[j+1] == 0xff && buffer[j+2] == 0xff && buffer[j+3] == 0xff) break;
+            file_tkey_count++;
+        }
+    }
+    if (!save_hierarchical_file_table_get_file_entry_by_path(&save_ctx->save_filesystem_core.file_table, ticket_bin_path, &entry)) {
+        EPRINTF("Unable to locate ticket.bin in e2.");
+        goto dismount;
+    }
+
+    save_open_fat_storage(&save_ctx->save_filesystem_core, &fat_storage, entry.value.save_file_info.start_block);
+
+    total_br = 0;
+    pct = 0;
+    last_pct = 0;
+    while (br == buf_size && total_br < entry.value.save_file_info.length) {
+        br = save_allocation_table_storage_read(&fat_storage, buffer, total_br, buf_size);
+        if (buffer[0] == 0) break;
+        total_br += br;
+        for (u32 j = 0; j < buf_size; j += 0x400) {
+            pct = (_titlekey_count - common_titlekey_count) * 100 / file_tkey_count;
             if (pct > last_pct && pct <= 100) {
                 last_pct = pct;
                 tui_pbar(save_x, save_y, pct, COLOR_GREEN, 0xFF155500);
             }
-            for (u32 j = i; j < i + 0x4000; j += 0x400) {
-                minerva_periodic_training();
-                if (buffer[j] == 4 && buffer[j+1] == 0 && buffer[j+2] == 1 && buffer[j+3] == 0) {
-                    u32 k = common_titlekey_count;
-                    bool titlekey_found = false;
-                    for (; k < _titlekey_count; k++) {
-                        if (!memcmp(rights_ids + 0x10 * k, buffer + j + 0x2a0, 0x10)) {
-                            titlekey_found = true;
-                            break;
-                        }
-                    }
-                    if (titlekey_found)
-                        continue;
-                    memcpy(rights_ids + 0x10 * _titlekey_count, buffer + j + 0x2a0, 0x10);
+            minerva_periodic_training();
+            if (buffer[j] == 4 && buffer[j+1] == 0 && buffer[j+2] == 1 && buffer[j+3] == 0) {
+                memcpy(rights_ids + 0x10 * _titlekey_count, buffer + j + 0x2a0, 0x10);
 
-                    u8 *titlekey_block = buffer + j + 0x180;
-                    se_rsa_exp_mod(0, M, 0x100, titlekey_block, 0x100);
-                    u8 *salt = M + 1;
-                    u8 *db = M + 0x21;
-                    _mgf1_xor(salt, 0x20, db, 0xdf);
-                    _mgf1_xor(db, 0xdf, salt, 0x20);
-                    if (memcmp(db, null_hash, 0x20))
-                        continue;
-                    memcpy(titlekeys + 0x10 * _titlekey_count, db + 0xcf, 0x10);
-                    _titlekey_count++;
-                } else {
-                    break;
-                }
+                u8 *titlekey_block = buffer + j + 0x180;
+                se_rsa_exp_mod(0, M, 0x100, titlekey_block, 0x100);
+                u8 *salt = M + 1;
+                u8 *db = M + 0x21;
+                _mgf1_xor(salt, 0x20, db, 0xdf);
+                _mgf1_xor(db, 0xdf, salt, 0x20);
+                if (memcmp(db, null_hash, 0x20))
+                    continue;
+                memcpy(titlekeys + 0x10 * _titlekey_count, db + 0xcf, 0x10);
+                _titlekey_count++;
+            } else {
+                break;
             }
         }
-        if (br < buf_size) break;
     }
+    tui_pbar(save_x, save_y, 100, COLOR_GREEN, 0xFF155500);
     free(buffer);
     f_close(&fp);
 
     gfx_con_setpos(0, save_y);
-    TPRINTFARGS("\n%k                ", colors[(color_idx++) % 6]);
+    TPRINTFARGS("\n%kPersonalized... ", colors[(color_idx++) % 6]);
     gfx_printf("\n%k  Found %d titlekeys.\n", colors[(color_idx++) % 6], _titlekey_count);
 
-dismount:
+dismount:;
+    if (save_ctx) {
+        save_free_contexts(save_ctx);
+        free(save_ctx);
+    }
     f_mount(NULL, "emmc:", 1);
     clear_sector_cache = true;
     nx_emmc_gpt_free(&gpt);
