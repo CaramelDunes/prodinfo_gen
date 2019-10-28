@@ -453,96 +453,33 @@ get_tsec: ;
     pkg2_decompress_kip(ki, 2 | 4); // we only need .rodata and .data
     TPRINTFARGS("%kDecompress FS...", colors[(color_idx++) % 6]);
 
-    u8  hash_index = 0, hash_max = 11, hash_order[13],
-        key_lengths[13] = {0x10, 0x20, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x20, 0x10, 0x20, 0x20};
-    u32 start_offset = 0, hks_offset_from_end = ki->kip1->sections[2].size_decomp, alignment = 0x10;
+    u8 hash_index = 0;
+    const u8 key_lengths[13] = {0x10, 0x20, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x20, 0x10, 0x20, 0x20};
 
-    // the FS keys appear in different orders
     if (!memcmp(pkg1_id->id, "2016", 4)) {
-        // 1.0.0 doesn't have SD keys at all
-        hash_max = 6;
-        // the first key isn't aligned with the rest
+        // 1.0.0 doesn't have SD keys at all and the first key isn't aligned with the rest
         memcpy(fs_keys[2], ki->kip1->data + ki->kip1->sections[0].size_comp + 0x1ae0e, 0x10);
         hash_index = 1;
-        start_offset = 0x1b517;
-        hks_offset_from_end = 0x125bc2;
-        u8 temp[7] = {2, 3, 4, 0, 5, 6, 1};
-        memcpy(hash_order, temp, 7);
-    } else {
-        // 2.0.0 - 8.0.0
-        switch (pkg1_id->kb) {
-        case KB_FIRMWARE_VERSION_100_200:
-            start_offset = 0x1d226;
-            hks_offset_from_end -= 0x26fe;
-            break;
-        case KB_FIRMWARE_VERSION_300:
-            start_offset = 0x1ffa6;
-            hks_offset_from_end -= 0x298b;
-            break;
-        case KB_FIRMWARE_VERSION_301:
-            start_offset = 0x20026;
-            hks_offset_from_end -= 0x29ab;
-            break;
-        case KB_FIRMWARE_VERSION_400:
-            start_offset = 0x1c64c;
-            hks_offset_from_end -= 0x37eb;
-            break;
-        case KB_FIRMWARE_VERSION_500:
-            start_offset = 0x1f3b4;
-            hks_offset_from_end -= 0x465b;
-            break;
-        case KB_FIRMWARE_VERSION_600:
-        case KB_FIRMWARE_VERSION_620:
-            start_offset = 0x27350;
-            hks_offset_from_end = 0x17ff5;
-            alignment = 8;
-            break;
-        case KB_FIRMWARE_VERSION_700:
-        case KB_FIRMWARE_VERSION_810:
-            start_offset = 0x29c50;
-            hks_offset_from_end -= 0x6a73;
-            alignment = 8;
-            break;
-        case KB_FIRMWARE_VERSION_900:
-            start_offset = 0x2ec10;
-            hks_offset_from_end -= 0x5573;
-            alignment = 1; // RIP
-            break;
-        }
-
-        if (pkg1_id->kb <= KB_FIRMWARE_VERSION_500) {
-            u8 temp[12] = {2, 3, 4, 0, 5, 7, 10, 12, 11, 6, 8, 1};
-            memcpy(hash_order, temp, 12);
-        } else if (pkg1_id->kb <= KB_FIRMWARE_VERSION_620) {
-            u8 temp[12] = {6, 5, 10, 7, 8, 2, 3, 4, 0, 12, 11, 1};
-            memcpy(hash_order, temp, 12);
-        } else {
-            u8 temp[13] = {6, 5, 10, 7, 8, 2, 3, 4, 0, 12, 11, 9, 1};
-            memcpy(hash_order, temp, 13);
-            hash_max = 12;
-        }
     }
 
     u8 temp_hash[0x20];
-    for (u32 i = ki->kip1->sections[0].size_comp + start_offset; i < ki->size - 0x20; ) {
+    for (u32 i = ki->kip1->sections[0].size_comp + pkg1_id->key_info.start_offset; i < ki->size - 0x20; ) {
         minerva_periodic_training();
-        se_calc_sha256(temp_hash, ki->kip1->data + i, key_lengths[hash_order[hash_index]]);
-        if (!memcmp(temp_hash, fs_hashes_sha256[hash_order[hash_index]], 0x20)) {
-            memcpy(fs_keys[hash_order[hash_index]], ki->kip1->data + i, key_lengths[hash_order[hash_index]]);
-            /*if (hash_index == hash_max) {
-                TPRINTFARGS("%d: %x    end -%x", hash_index, (*(ki->kip1->data + i)), ki->size - i);
-            } else {
-                TPRINTFARGS("%d: %x rodata +%x", hash_index, (*(ki->kip1->data + i)), i - ki->kip1->sections[0].size_comp);
-            }*/
-            i += key_lengths[hash_order[hash_index]];
-            if (hash_index == hash_max - 1) {
-                i = ki->size - hks_offset_from_end;
-            } else if (hash_index == hash_max) {
+        se_calc_sha256(temp_hash, ki->kip1->data + i, key_lengths[pkg1_id->key_info.hash_order[hash_index]]);
+        if (!memcmp(temp_hash, fs_hashes_sha256[pkg1_id->key_info.hash_order[hash_index]], 0x20)) {
+            memcpy(fs_keys[pkg1_id->key_info.hash_order[hash_index]], ki->kip1->data + i, key_lengths[pkg1_id->key_info.hash_order[hash_index]]);
+            i += key_lengths[pkg1_id->key_info.hash_order[hash_index]];
+            if (hash_index == pkg1_id->key_info.hash_max - 1) {
+                if (pkg1_id->key_info.hks_offset_is_from_end)
+                    i = ki->size - pkg1_id->key_info.hks_offset;
+                else
+                    i = ki->size - (ki->kip1->sections[2].size_decomp - pkg1_id->key_info.hks_offset);
+            } else if (hash_index == pkg1_id->key_info.hash_max) {
                 break;
             }
             hash_index++;
         } else {
-            i += alignment;
+            i += pkg1_id->key_info.alignment;
         }
     }
 pkg2_done:
@@ -632,7 +569,6 @@ pkg2_done:
     }
 
     path[25] = '/';
-    start_offset = 0;
     while (!f_readdir(&dir, &fno) && fno.fname[0] && titles_found < title_limit) {
         minerva_periodic_training();
         memcpy(path + 26, fno.fname, 36);
@@ -647,44 +583,14 @@ pkg2_done:
         se_aes_xts_crypt(5, 4, 0, 1, dec_header + 0x200, dec_header, 32, 1);
         // es doesn't contain es key sources on 1.0.0
         if (memcmp(pkg1_id->id, "2016", 4) && *(u32*)(dec_header + 0x210) == 0x33 && dec_header[0x205] == 0) {
-            // es (offset 0x210 is lower half of titleid, 0x205 == 0 means it's program nca, not meta)
-            switch (pkg1_id->kb) {
-            case KB_FIRMWARE_VERSION_100_200:
-                start_offset = 0x557b;
-                break;
-            case KB_FIRMWARE_VERSION_300:
-            case KB_FIRMWARE_VERSION_301:
-                start_offset = 0x552d;
-                break;
-            case KB_FIRMWARE_VERSION_400:
-                start_offset = 0x5382;
-                break;
-            case KB_FIRMWARE_VERSION_500:
-                start_offset = 0x5a63;
-                break;
-            case KB_FIRMWARE_VERSION_600:
-            case KB_FIRMWARE_VERSION_620:
-                start_offset = 0x5674;
-                break;
-            case KB_FIRMWARE_VERSION_700:
-            case KB_FIRMWARE_VERSION_810:
-                start_offset = 0x5563;
-                break;
-            case KB_FIRMWARE_VERSION_900:
-                start_offset = 0x6495;
-                break;
-            }
-            hash_order[2] = 2;
-            if (pkg1_id->kb < KB_FIRMWARE_VERSION_500) {
-                hash_order[0] = 0;
-                hash_order[1] = 1;
-            } else {
+            u8 hash_order[3] = {0, 1, 2};
+            if (pkg1_id->kb >= KB_FIRMWARE_VERSION_500) {
                 hash_order[0] = 1;
                 hash_order[1] = 0;
             }
             hash_index = 0;
             // decrypt only what is needed to locate needed keys
-            temp_file = (u8*)_nca_process(5, 4, &fp, start_offset, 0xc0, key_area_key);
+            temp_file = (u8*)_nca_process(5, 4, &fp, pkg1_id->key_info.es_offset, 0xc0, key_area_key);
             for (u32 i = 0; i <= 0xb0; ) {
                 se_calc_sha256(temp_hash, temp_file + i, 0x10);
                 if (!memcmp(temp_hash, es_hashes_sha256[hash_order[hash_index]], 0x10)) {
@@ -701,36 +607,7 @@ pkg2_done:
             temp_file = NULL;
             titles_found++;
         } else if (*(u32*)(dec_header + 0x210) == 0x24 && dec_header[0x205] == 0) {
-            // ssl
-            switch (pkg1_id->kb) {
-            case KB_FIRMWARE_VERSION_100_200:
-                start_offset = 0x3d41a;
-                break;
-            case KB_FIRMWARE_VERSION_300:
-            case KB_FIRMWARE_VERSION_301:
-                start_offset = 0x3cb81;
-                break;
-            case KB_FIRMWARE_VERSION_400:
-                start_offset = 0x3711c;
-                break;
-            case KB_FIRMWARE_VERSION_500:
-                start_offset = 0x37901;
-                break;
-            case KB_FIRMWARE_VERSION_600:
-            case KB_FIRMWARE_VERSION_620:
-                start_offset = 0x1d5be;
-                break;
-            case KB_FIRMWARE_VERSION_700:
-            case KB_FIRMWARE_VERSION_810:
-                start_offset = 0x1d437;
-                break;
-            case KB_FIRMWARE_VERSION_900:
-                start_offset = 0x1d807;
-                break;
-            }
-            if (!memcmp(pkg1_id->id, "2016", 4))
-                start_offset = 0x449dc;
-            temp_file = (u8*)_nca_process(5, 4, &fp, start_offset, 0x70, key_area_key);
+            temp_file = (u8*)_nca_process(5, 4, &fp, pkg1_id->key_info.ssl_offset, 0x70, key_area_key);
             for (u32 i = 0; i <= 0x60; i++) {
                 se_calc_sha256(temp_hash, temp_file + i, 0x10);
                 if (!memcmp(temp_hash, ssl_hashes_sha256[1], 0x10)) {
@@ -1150,8 +1027,8 @@ static void _save_key(const char *name, const void *data, u32 len, char *outbuf)
 
 static void _save_key_family(const char *name, const void *data, u32 start_key, u32 num_keys, u32 len, char *outbuf) {
     char temp_name[0x40] = {0};
-    for (u32 i = start_key; i < num_keys + start_key; i++) {
-        sprintf(temp_name, "%s_%02x", name, i);
+    for (u32 i = 0; i < num_keys; i++) {
+        sprintf(temp_name, "%s_%02x", name, i + start_key);
         _save_key(temp_name, data + i * len, len, outbuf);
     }
 }
