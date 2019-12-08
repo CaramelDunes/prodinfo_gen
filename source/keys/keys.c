@@ -483,9 +483,11 @@ get_tsec: ;
         }
     }
 pkg2_done:
-    free(ki->kip1);
+    if (ki) {
+        free(ki->kip1);
+        free(ki);
+    }
     free(pkg2);
-    free(ki);
 
     u8 *rights_ids = NULL, *titlekeys = NULL;
 
