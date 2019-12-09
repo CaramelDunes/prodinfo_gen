@@ -653,7 +653,14 @@ pkg2_done:
         TPRINTFARGS("%kSSL keys...     ", colors[(color_idx++) % 6]);
     }
 
-    if (f_open(&fp, "sd:/Nintendo/Contents/private", FA_READ | FA_OPEN_EXISTING)) {
+    char private_path[200] = "sd:/";
+    if (emu_cfg.nintendo_path && (emu_cfg.enabled || !h_cfg.emummc_force_disable)) {
+        strcat(private_path, emu_cfg.nintendo_path);
+    } else {
+        strcat(private_path, "Nintendo");
+    }
+    strcat(private_path, "/Contents/private");
+    if (f_open(&fp, private_path, FA_READ | FA_OPEN_EXISTING)) {
         EPRINTF("Unable to open SD seed vector. Skipping.");
         goto get_titlekeys;
     }
