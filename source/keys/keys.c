@@ -484,7 +484,6 @@ get_tsec: ;
     }
 pkg2_done:
     if (ki) {
-        free(ki->kip1);
         free(ki);
     }
     free(pkg2);

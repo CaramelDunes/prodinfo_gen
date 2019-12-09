@@ -49,6 +49,8 @@ static bool sd_mounted;
 hekate_config h_cfg;
 boot_cfg_t __attribute__((section ("._boot_cfg"))) b_cfg;
 
+volatile nyx_storage_t *nyx_str = (nyx_storage_t *)NYX_STORAGE_ADDR;
+
 bool sd_mount()
 {
 	if (sd_mounted)
@@ -420,7 +422,7 @@ void ipl_main()
 	gfx_con_init();
 	display_backlight_pwm_init();
 
-	bpmp_clk_rate_set(BPMP_CLK_SUPER_BOOST);
+	bpmp_clk_rate_set(BPMP_CLK_DEFAULT_BOOST);
 
 	h_cfg.emummc_force_disable = emummc_load_cfg();
 
