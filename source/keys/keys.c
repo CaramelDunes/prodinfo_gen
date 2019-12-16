@@ -349,14 +349,16 @@ get_tsec: ;
     if (pkg1_id->kb >= KB_FIRMWARE_VERSION_500) {
         if ((fuse_read_odm(4) & 0x800) && fuse_read_odm(0) == 0x8E61ECAE && fuse_read_odm(1) == 0xF2BA3BB2) {
             key_generation = fuse_read_odm(2) & 0x1F;
+            if (key_generation)
+                key_generation--;
         }
     }
     if (_key_exists(device_key)) {
         if (key_generation) {
             se_aes_key_set(8, new_device_key, 0x10);
-            se_aes_crypt_block_ecb(8, 0, temp_key, new_device_key_sources[pkg1_id->kb - KB_FIRMWARE_VERSION_400]);
+            se_aes_crypt_block_ecb(8, 0, temp_key, new_device_key_sources[key_generation - KB_FIRMWARE_VERSION_400]);
             se_aes_key_set(8, master_key[0], 0x10);
-            se_aes_unwrap_key(8, 8, new_device_keygen_sources[pkg1_id->kb - KB_FIRMWARE_VERSION_400]);
+            se_aes_unwrap_key(8, 8, new_device_keygen_sources[key_generation - KB_FIRMWARE_VERSION_400]);
             se_aes_crypt_block_ecb(8, 0, temp_key, temp_key);
         } else
             memcpy(temp_key, device_key, 0x10);
