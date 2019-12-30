@@ -76,11 +76,19 @@ u32 start_time, end_time;
 #define SAVE_KEY(name, src, len) _save_key(name, src, len, text_buffer)
 #define SAVE_KEY_FAMILY(name, src, start, count, len) _save_key_family(name, src, start, count, len, text_buffer)
 
+static inline u32 _read_le_u32(const void *buffer, u32 offset) {
+    return (*(u8*)(buffer + offset + 0)        ) |
+           (*(u8*)(buffer + offset + 1) << 0x08) |
+           (*(u8*)(buffer + offset + 2) << 0x10) |
+           (*(u8*)(buffer + offset + 3) << 0x18);
+}
+
 // key functions
 static bool  _key_exists(const void *data) { return memcmp(data, zeros, 0x10); };
 static void  _save_key(const char *name, const void *data, u32 len, char *outbuf);
 static void  _save_key_family(const char *name, const void *data, u32 start_key, u32 num_keys, u32 len, char *outbuf);
 static void  _generate_kek(u32 ks, const void *key_source, void *master_key, const void *kek_seed, const void *key_seed);
+static void  _get_device_key(u32 ks, void *out_device_key, u32 revision, const void *device_key, const void *master_key);
 // nca functions
 static void *_nca_process(u32 hk_ks1, u32 hk_ks2, FIL *fp, u32 key_offset, u32 len, const u8 key_area_key[3][KB_FIRMWARE_VERSION_MAX+1][0x10]);
 static u32   _nca_fread_ctr(u32 ks, FIL *fp, void *buffer, u32 offset, u32 len, u8 *ctr);
@@ -93,7 +101,7 @@ void dump_keys() {
     u8  temp_key[0x10],
         bis_key[4][0x20] = {0},
         device_key[0x10] = {0},
-        new_device_key[0x10] = {0},
+        device_key_4x[0x10] = {0},
         sd_seed[0x10] = {0},
         // FS-related keys
         fs_keys[13][0x20] = {0},
@@ -102,6 +110,7 @@ void dump_keys() {
         // other sysmodule sources
         es_keys[3][0x10] = {0},
         eticket_rsa_kek[0x10] = {0},
+        eticket_rsa_kek_personalized[0x10] = {0},
         ssl_keys[0x10] = {0},
         ssl_rsa_kek[0x10] = {0},
         // keyblob-derived families
@@ -202,7 +211,7 @@ void dump_keys() {
                 }
             }
             // write self to payload.bin to run again when sept finishes
-            u32 payload_size = *(u32 *)(IPL_LOAD_ADDR + 0x84) - IPL_LOAD_ADDR;
+            u32 payload_size = _read_le_u32((u8 *)IPL_LOAD_ADDR, 0x84) - IPL_LOAD_ADDR;
             if (f_open(&fp, "sd:/sept/payload.bin", FA_CREATE_NEW | FA_WRITE)) {
                 EPRINTF("Unable to open /sept/payload.bin to write.");
                 goto out_wait;
@@ -314,7 +323,7 @@ get_tsec: ;
         se_aes_crypt_block_ecb(7, 0, keyblob_mac_key[i], keyblob_mac_key_source); // kbm = unwrap(kbms, kbk)
         if (i == 0) {
             se_aes_crypt_block_ecb(7, 0, device_key, per_console_key_source); // devkey = unwrap(pcks, kbk0)
-            se_aes_crypt_block_ecb(7, 0, new_device_key, per_console_key_source_4x);
+            se_aes_crypt_block_ecb(7, 0, device_key_4x, per_console_key_source_4x);
         }
 
         // verify keyblob is not corrupt
@@ -355,11 +364,7 @@ get_tsec: ;
     }
     if (_key_exists(device_key)) {
         if (key_generation) {
-            se_aes_key_set(8, new_device_key, 0x10);
-            se_aes_crypt_block_ecb(8, 0, temp_key, new_device_key_sources[key_generation - KB_FIRMWARE_VERSION_400]);
-            se_aes_key_set(8, master_key[0], 0x10);
-            se_aes_unwrap_key(8, 8, new_device_keygen_sources[key_generation - KB_FIRMWARE_VERSION_400]);
-            se_aes_crypt_block_ecb(8, 0, temp_key, temp_key);
+            _get_device_key(8, temp_key, key_generation, device_key_4x, master_key[0]);
         } else
             memcpy(temp_key, device_key, 0x10);
         se_aes_key_set(8, temp_key, 0x10);
@@ -585,7 +590,7 @@ pkg2_done:
         }
         se_aes_xts_crypt(5, 4, 0, 1, dec_header + 0x200, dec_header, 32, 1);
         // es doesn't contain es key sources on 1.0.0
-        if (memcmp(pkg1_id->id, "2016", 4) && *(u32*)(dec_header + 0x210) == 0x33 && dec_header[0x205] == 0) {
+        if (memcmp(pkg1_id->id, "2016", 4) && _read_le_u32(dec_header, 0x210) == 0x33 && dec_header[0x205] == 0) {
             u8 hash_order[3] = {0, 1, 2};
             if (pkg1_id->kb >= KB_FIRMWARE_VERSION_500) {
                 hash_order[0] = 1;
@@ -609,7 +614,7 @@ pkg2_done:
             free(temp_file);
             temp_file = NULL;
             titles_found++;
-        } else if (*(u32*)(dec_header + 0x210) == 0x24 && dec_header[0x205] == 0) {
+        } else if (_read_le_u32(dec_header, 0x210) == 0x24 && dec_header[0x205] == 0) {
             temp_file = (u8*)_nca_process(5, 4, &fp, pkg1_id->key_info.ssl_offset, 0x70, key_area_key);
             for (u32 i = 0; i <= 0x60; i++) {
                 se_calc_sha256(temp_hash, temp_file + i, 0x10);
@@ -720,13 +725,31 @@ get_titlekeys:
     se_aes_key_set(8, bis_key[2] + 0x00, 0x10);
     se_aes_key_set(9, bis_key[2] + 0x10, 0x10);
 
-    if (*(u32 *)buffer != 0x304C4143) {
+    if (_read_le_u32(buffer, 0) != 0x304C4143) {
         EPRINTF("CAL0 magic not found. Check BIS key 0.");
         free(buffer);
         goto dismount;
     }
 
-    se_aes_key_set(2, eticket_rsa_kek, 0x10);
+    u32 cal_version = _read_le_u32(buffer, 4);
+    u32 keypair_generation = _read_le_u32(buffer, 0x3AD0);
+    if (cal_version <= 8)
+        keypair_generation = 0; // settings zeroes this out below cal version 9
+
+    if (keypair_generation) {
+        keypair_generation--;
+        for (u32 i = 0; i < 0x10; i++)
+            temp_key[i] = aes_kek_generation_source[i] ^ aes_kek_seed_03[i];
+        u8 temp_device_key[0x10] = {0};
+        _get_device_key(7, temp_device_key, keypair_generation, device_key_4x, master_key[0]);
+        _generate_kek(7, es_keys[1], temp_device_key, temp_key, NULL);
+        se_aes_crypt_block_ecb(7, 0, eticket_rsa_kek_personalized, es_keys[0]);
+        memcpy(temp_key, eticket_rsa_kek_personalized, 0x10);
+    } else {
+        memcpy(temp_key, eticket_rsa_kek, 0x10);
+    }
+
+    se_aes_key_set(2, temp_key, 0x10);
     se_aes_crypt_ctr(2, keypair, 0x230, buffer + 0x38a0, 0x230, buffer + 0x3890);
 
     u8 *D = keypair, *N = keypair + 0x100, *E = keypair + 0x200;
@@ -916,7 +939,7 @@ key_output: ;
         EPRINTF("Unable to mount SD.");
         goto free_buffers;
     }
-    u32 text_buffer_size = _titlekey_count * 68 < 0x3000 ? 0x3000 : _titlekey_count * 68 + 1;
+    u32 text_buffer_size = _titlekey_count * 68 < 0x4000 ? 0x4000 : _titlekey_count * 68 + 1;
     text_buffer = (char *)calloc(1, text_buffer_size);
 
     SAVE_KEY("aes_kek_generation_source", aes_kek_generation_source, 0x10);
@@ -925,7 +948,9 @@ key_output: ;
     SAVE_KEY_FAMILY("bis_key", bis_key, 0, 4, 0x20);
     SAVE_KEY_FAMILY("bis_key_source", bis_key_source, 0, 3, 0x20);
     SAVE_KEY("device_key", device_key, 0x10);
+    SAVE_KEY("device_key_4x", device_key_4x, 0x10);
     SAVE_KEY("eticket_rsa_kek", eticket_rsa_kek, 0x10);
+    SAVE_KEY("eticket_rsa_kek_personalized", eticket_rsa_kek_personalized, 0x10);
     SAVE_KEY("eticket_rsa_kek_source", es_keys[0], 0x10);
     SAVE_KEY("eticket_rsa_kekek_source", es_keys[1], 0x10);
     SAVE_KEY("header_kek_source", fs_keys[0], 0x10);
@@ -1054,11 +1079,17 @@ static void _generate_kek(u32 ks, const void *key_source, void *master_key, cons
         se_aes_unwrap_key(ks, ks, key_seed);
 }
 
-static inline u32 _read_le_u32(const void *buffer, u32 offset) {
-    return (*(u8*)(buffer + offset + 0)        ) |
-           (*(u8*)(buffer + offset + 1) << 0x08) |
-           (*(u8*)(buffer + offset + 2) << 0x10) |
-           (*(u8*)(buffer + offset + 3) << 0x18);
+static void _get_device_key(u32 ks, void *out_device_key, u32 revision, const void *device_key, const void *master_key) {
+    if (revision < KB_FIRMWARE_VERSION_400)
+        memcpy(out_device_key, device_key, 0x10);
+
+    revision -= KB_FIRMWARE_VERSION_400;
+    u8 temp_key[0x10] = {0};
+    se_aes_key_set(ks, device_key, 0x10);
+    se_aes_crypt_ecb(ks, 0, temp_key, 0x10, new_device_key_sources[revision], 0x10);
+    se_aes_key_set(ks, master_key, 0x10);
+    se_aes_unwrap_key(ks, ks, new_device_keygen_sources[revision]);
+    se_aes_crypt_ecb(ks, 0, out_device_key, 0x10, temp_key, 0x10);
 }
 
 static void *_nca_process(u32 hk_ks1, u32 hk_ks2, FIL *fp, u32 key_offset, u32 len, const u8 key_area_key[3][KB_FIRMWARE_VERSION_MAX+1][0x10]) {
