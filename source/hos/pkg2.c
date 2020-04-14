@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018 naehrwert
- * Copyright (c) 2018-2019 CTCaer
+ * Copyright (c) 2018-2020 CTCaer
  * Copyright (c) 2018 Atmosphère-NX
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -41,12 +41,32 @@ static u32 _pkg2_calc_kip1_size(pkg2_kip1_t *kip1)
 
 void pkg2_get_newkern_info(u8 *kern_data)
 {
-	u32 info_op = *(u32 *)(kern_data + PKG2_NEWKERN_GET_INI1);
-	pkg2_newkern_ini1_val = ((info_op & 0xFFFF) >> 3) + PKG2_NEWKERN_GET_INI1; // Parse ADR and PC.
+	u32 pkg2_newkern_ini1_off = 0;
+	pkg2_newkern_ini1_start = 0;
+
+	// Find static OP offset that is close to INI1 offset.
+	u32 counter_ops = 0x100;
+	while (counter_ops)
+	{
+		if (*(u32 *)(kern_data + 0x100 - counter_ops) == PKG2_NEWKERN_GET_INI1_HEURISTIC)
+		{
+			pkg2_newkern_ini1_off = 0x100 - counter_ops + 12; // OP found. Add 12 for the INI1 offset.
+			break;
+		}
+
+		counter_ops -= 4;
+	}
+
+	// Offset not found?
+	if (!counter_ops)
+		return;
+
+	u32 info_op = *(u32 *)(kern_data + pkg2_newkern_ini1_off);
+	pkg2_newkern_ini1_val = ((info_op & 0xFFFF) >> 3) + pkg2_newkern_ini1_off; // Parse ADR and PC.
 
 	pkg2_newkern_ini1_start = *(u32 *)(kern_data + pkg2_newkern_ini1_val);
 	pkg2_newkern_ini1_end   = *(u32 *)(kern_data + pkg2_newkern_ini1_val + 0x8);
-}
+	}
 
 void pkg2_parse_kips(link_t *info, pkg2_hdr_t *pkg2, bool *new_pkg2)
 {
