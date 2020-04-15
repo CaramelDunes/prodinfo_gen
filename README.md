@@ -18,3 +18,7 @@ Install [devkitARM](https://devkitpro.org/) and run `make`.
 Massive Thanks to CTCaer!
 =
 This software is heavily based on [Hekate](https://github.com/CTCaer/hekate). Beyond that, CTCaer was exceptionally helpful in the development of this project, lending loads of advice, expertise, and humor.
+
+License
+=
+This project is under the GPLv2 license. The Save processing module is adapted from [hactool](https://github.com/SciresM/hactool) code under ISC.
