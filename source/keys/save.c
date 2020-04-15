@@ -70,27 +70,27 @@ uint32_t save_duplex_storage_read(duplex_storage_ctx_t *ctx, void *buffer, uint6
 }
 
 remap_segment_ctx_t *save_remap_init_segments(remap_header_t *header, remap_entry_ctx_t *map_entries, uint32_t num_map_entries) {
-    remap_segment_ctx_t *segments =  malloc(sizeof(remap_segment_ctx_t) * header->map_segment_count);
+    remap_segment_ctx_t *segments =  calloc(1, sizeof(remap_segment_ctx_t) * header->map_segment_count);
     unsigned int entry_idx = 0;
 
     for (unsigned int i = 0; i < header->map_segment_count; i++) {
         remap_segment_ctx_t *seg = &segments[i];
-        seg->entries = malloc(sizeof(remap_entry_ctx_t));
-        memcpy(seg->entries, &map_entries[entry_idx], sizeof(remap_entry_ctx_t));
+        seg->entry_count = 0;
+        seg->entries = malloc(sizeof(remap_entry_ctx_t *));
+        seg->entries[seg->entry_count++] = &map_entries[entry_idx];
         seg->offset = map_entries[entry_idx].virtual_offset;
-        map_entries[entry_idx].segment = seg;
-        seg->entry_count = 1;
-        entry_idx++;
+        map_entries[entry_idx++].segment = seg;
 
         while (entry_idx < num_map_entries && map_entries[entry_idx - 1].virtual_offset_end == map_entries[entry_idx].virtual_offset) {
             map_entries[entry_idx].segment = seg;
             map_entries[entry_idx - 1].next = &map_entries[entry_idx];
-            seg->entries = malloc(sizeof(remap_entry_ctx_t));
-            memcpy(seg->entries, &map_entries[entry_idx], sizeof(remap_entry_ctx_t));
-            seg->entry_count++;
-            entry_idx++;
+            remap_entry_ctx_t **ptr = calloc(1, sizeof(remap_entry_ctx_t *) * (seg->entry_count + 1));
+            memcpy(ptr, seg->entries, sizeof(remap_entry_ctx_t *) * (seg->entry_count));
+            free(seg->entries);
+            seg->entries = ptr;
+            seg->entries[seg->entry_count++] = &map_entries[entry_idx++];
         }
-        seg->length = seg->entries[seg->entry_count - 1].virtual_offset_end - seg->entries[0].virtual_offset;
+        seg->length = seg->entries[seg->entry_count - 1]->virtual_offset_end - seg->entries[0]->virtual_offset;
     }
     return segments;
 }
@@ -99,8 +99,8 @@ remap_entry_ctx_t *save_remap_get_map_entry(remap_storage_ctx_t *ctx, uint64_t o
     uint32_t segment_idx = (uint32_t)(offset >> (64 - ctx->header->segment_bits));
     if (segment_idx < ctx->header->map_segment_count) {
         for (unsigned int i = 0; i < ctx->segments[segment_idx].entry_count; i++)
-            if (ctx->segments[segment_idx].entries[i].virtual_offset_end > offset)
-                return &ctx->segments[segment_idx].entries[i];
+            if (ctx->segments[segment_idx].entries[i]->virtual_offset_end > offset)
+                return ctx->segments[segment_idx].entries[i];
     }
     return NULL;
 }
@@ -179,7 +179,7 @@ void save_ivfc_storage_init(hierarchical_integrity_verification_storage_ctx_t *c
         uint32_t length;
     };
 
-    static struct salt_source_t salt_sources[6] = {
+    static const struct salt_source_t salt_sources[6] = {
         {"HierarchicalIntegrityVerificationStorage::Master", 48},
         {"HierarchicalIntegrityVerificationStorage::L1", 44},
         {"HierarchicalIntegrityVerificationStorage::L2", 44},
@@ -238,12 +238,14 @@ size_t save_ivfc_level_fread(ivfc_level_save_ctx_t *ctx, void *buffer, uint64_t 
 void save_ivfc_storage_read(integrity_verification_storage_ctx_t *ctx, void *buffer, uint64_t offset, size_t count, uint32_t verify) {
     if (count > ctx->sector_size) {
         EPRINTF("IVFC read exceeds sector size!\n");
+        return;
     }
 
     uint64_t block_index = offset / ctx->sector_size;
 
     if (ctx->block_validities[block_index] == VALIDITY_INVALID && verify) {
         EPRINTFARGS("Hash error from previous check\n found at offset %x count %x!\n", (u32)offset, count);
+        return;
     }
 
     uint8_t hash_buffer[0x20] = {0};
@@ -270,7 +272,7 @@ void save_ivfc_storage_read(integrity_verification_storage_ctx_t *ctx, void *buf
     uint8_t hash[0x20] = {0};
     uint8_t *data_buffer = calloc(1, ctx->sector_size + 0x20);
     memcpy(data_buffer, ctx->salt, 0x20);
-    memcpy(data_buffer + 0x20, buffer, count);
+    memcpy(data_buffer + 0x20, buffer, ctx->sector_size);
 
     se_calc_sha256(hash, data_buffer, ctx->sector_size + 0x20);
     hash[0x1F] |= 0x80;
@@ -284,6 +286,7 @@ void save_ivfc_storage_read(integrity_verification_storage_ctx_t *ctx, void *buf
 
     if (ctx->block_validities[block_index] == VALIDITY_INVALID && verify) {
         EPRINTFARGS("Hash error from current check\n found at offset %x count %x!\n", (u32)offset, count);
+        return;
     }
 }
 
@@ -295,6 +298,7 @@ uint32_t save_allocation_table_read_entry_with_length(allocation_table_ctx_t *ct
     if ((entries[0].next & 0x80000000) == 0) {
         if (entries[0].prev & 0x80000000 && entries[0].prev != 0x80000000) {
             EPRINTF("Invalid range entry in allocation table!\n");
+            return 0;
         }
     } else {
         length = entries[1].next - entry_index + 1;
@@ -354,6 +358,7 @@ void save_allocation_table_iterator_begin(allocation_table_iterator_ctx_t *ctx, 
 
     if (ctx->prev_block != 0xFFFFFFFF) {
         EPRINTFARGS("Attempted to start FAT iteration from\n invalid block %x!\n", initial_block);
+        return;
     }
 }
 
@@ -464,6 +469,8 @@ uint32_t save_fs_get_index_from_key(save_filesystem_list_ctx_t *ctx, save_entry_
     while (index) {
         if (index > capacity) {
             EPRINTFARGS("Save entry index %d out of range!", index);
+            *prev_index = 0xFFFFFFFF;
+            return 0xFFFFFFFF;
         }
         save_fs_list_read_entry(ctx, index, &entry);
         if (entry.parent == key->parent && !strcmp(entry.name, key->name)) {
@@ -619,26 +626,25 @@ validity_t save_filesystem_verify(save_ctx_t *ctx) {
     return journal_validity;
 }
 
-void save_process(save_ctx_t *ctx) {
+bool save_process(save_ctx_t *ctx) {
     /* Try to parse Header A. */
     f_lseek(ctx->file, 0);
     if (f_read(ctx->file, &ctx->header, sizeof(ctx->header), NULL)) {
         EPRINTF("Failed to read save header!\n");
+        return false;
     }
 
-    save_process_header(ctx);
-
-    if (ctx->header_hash_validity == VALIDITY_INVALID) {
+    if (!save_process_header(ctx) || (ctx->header_hash_validity == VALIDITY_INVALID)) {
         /* Try to parse Header B. */
         f_lseek(ctx->file, 0x4000);
         if (f_read(ctx->file, &ctx->header, sizeof(ctx->header), NULL)) {
             EPRINTF("Failed to read save header!\n");
+            return false;
         }
 
-        save_process_header(ctx);
-
-        if (ctx->header_hash_validity == VALIDITY_INVALID) {
+        if (!save_process_header(ctx) || (ctx->header_hash_validity == VALIDITY_INVALID)) {
             EPRINTF("Error: Save header is invalid!\n");
+            return false;
         }
     }
 
@@ -759,14 +765,18 @@ void save_process(save_ctx_t *ctx) {
     /* Initialize core save filesystem. */
     ctx->save_filesystem_core.base_storage = &ctx->core_data_ivfc_storage;
     save_filesystem_init(&ctx->save_filesystem_core, ctx->fat_storage, &ctx->header.save_header, &ctx->header.fat_header);
+
+    return true;
 }
 
-void save_process_header(save_ctx_t *ctx) {
+bool save_process_header(save_ctx_t *ctx) {
     if (ctx->header.layout.magic != MAGIC_DISF || ctx->header.duplex_header.magic != MAGIC_DPFS ||
         ctx->header.data_ivfc_header.magic != MAGIC_IVFC || ctx->header.journal_header.magic != MAGIC_JNGL ||
         ctx->header.save_header.magic != MAGIC_SAVE || ctx->header.main_remap_header.magic != MAGIC_RMAP ||
-        ctx->header.meta_remap_header.magic != MAGIC_RMAP) {
+        ctx->header.meta_remap_header.magic != MAGIC_RMAP)
+    {
         EPRINTF("Error: Save header is corrupt!\n");
+        return false;
     }
 
     ctx->data_ivfc_master = (uint8_t *)&ctx->header + ctx->header.layout.ivfc_master_hash_offset_a;
@@ -781,19 +791,16 @@ void save_process_header(save_ctx_t *ctx) {
     if (ctx->header.layout.version >= 0x50000) {
         ctx->header.fat_ivfc_header.num_levels = 4;
     }
+    return true;
 }
 
 void save_free_contexts(save_ctx_t *ctx) {
     for (unsigned int i = 0; i < ctx->data_remap_storage.header->map_segment_count; i++) {
-        for (unsigned int j = 0; j < ctx->data_remap_storage.segments[i].entry_count; j++) {
-            free(&ctx->data_remap_storage.segments[i].entries[j]);
-        }
+        free(ctx->data_remap_storage.segments[i].entries);
     }
     free(ctx->data_remap_storage.segments);
     for (unsigned int i = 0; i < ctx->meta_remap_storage.header->map_segment_count; i++) {
-        for (unsigned int j = 0; j < ctx->meta_remap_storage.segments[i].entry_count; j++) {
-            free(&ctx->meta_remap_storage.segments[i].entries[j]);
-        }
+        free(ctx->meta_remap_storage.segments[i].entries);
     }
     free(ctx->meta_remap_storage.segments);
     free(ctx->data_remap_storage.map_entries);

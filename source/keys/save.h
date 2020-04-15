@@ -157,7 +157,7 @@ struct remap_entry_ctx_t {
 struct remap_segment_ctx_t{
     uint64_t offset;
     uint64_t length;
-    remap_entry_ctx_t *entries;
+    remap_entry_ctx_t **entries;
     uint64_t entry_count;
 };
 
@@ -472,8 +472,8 @@ static inline uint32_t save_allocation_table_get_free_list_block_index(allocatio
     return allocation_table_entry_index_to_block(save_allocation_table_get_free_list_entry_index(ctx));
 }
 
-void save_process(save_ctx_t *ctx);
-void save_process_header(save_ctx_t *ctx);
+bool save_process(save_ctx_t *ctx);
+bool save_process_header(save_ctx_t *ctx);
 void save_save(save_ctx_t *ctx);
 void save_print(save_ctx_t *ctx);
 
