@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019 shchmue
+ * Copyright (c) 2019-2020 shchmue
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -556,6 +556,7 @@ pkg2_done:
     FILINFO fno;
     FIL fp;
     save_ctx_t *save_ctx = NULL;
+    bool save_process_success = false;
 
     // sysmodule NCAs only ever have one section (exefs) so 0x600 is sufficient
     u8 *dec_header = (u8*)malloc(0x600);
@@ -791,8 +792,10 @@ get_titlekeys:
     save_ctx->file = &fp;
     save_ctx->tool_ctx.action = 0;
     memcpy(save_ctx->save_mac_key, save_mac_key, 0x10);
-    if (!save_process(save_ctx)) {
+    save_process_success = save_process(save_ctx);
+    if (!save_process_success) {
         EPRINTF("Failed to process e1 save.");
+        goto dismount;
     }
 
     char ticket_bin_path[SAVE_FS_LIST_MAX_NAME_LENGTH] = "/ticket.bin";
@@ -843,6 +846,7 @@ get_titlekeys:
     tui_pbar(save_x, save_y, 100, COLOR_GREEN, 0xFF155500);
     f_close(&fp);
     save_free_contexts(save_ctx);
+    save_process_success = false;
     memset(save_ctx, 0, sizeof(save_ctx_t));
     memset(&fat_storage, 0, sizeof(allocation_table_storage_ctx_t));
 
@@ -862,8 +866,10 @@ get_titlekeys:
     save_ctx->file = &fp;
     save_ctx->tool_ctx.action = 0;
     memcpy(save_ctx->save_mac_key, save_mac_key, 0x10);
-    if (!save_process(save_ctx)) {
-        EPRINTF("Failed to process e1 save.");
+    save_process_success = save_process(save_ctx);
+    if (!save_process_success) {
+        EPRINTF("Failed to process e2 save.");
+        goto dismount;
     }
 
     if (!save_hierarchical_file_table_get_file_entry_by_path(&save_ctx->save_filesystem_core.file_table, ticket_list_bin_path, &entry)) {
@@ -932,8 +938,10 @@ get_titlekeys:
     gfx_printf("\n%k  Found %d titlekeys.\n", colors[(color_idx++) % 6], _titlekey_count);
 
 dismount:;
-    if (save_ctx) {
+    if (save_process_success) {
         save_free_contexts(save_ctx);
+    }
+    if (save_ctx) {
         free(save_ctx);
     }
     f_mount(NULL, "emmc:", 1);
