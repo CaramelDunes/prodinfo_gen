@@ -135,11 +135,13 @@ int sd_save_to_file(void *buf, u32 size, const char *filename)
 #define PATCHED_RELOC_SZ    0x94
 #define PATCHED_RELOC_STACK 0x40007000
 #define PATCHED_RELOC_ENTRY 0x40010000
-#define EXT_PAYLOAD_ADDR    0xC03C0000
+#define EXT_PAYLOAD_ADDR    0xC0000000
 #define RCM_PAYLOAD_ADDR    (EXT_PAYLOAD_ADDR + ALIGN(PATCHED_RELOC_SZ, 0x10))
-#define COREBOOT_ADDR       (0xD0000000 - 0x100000)
+#define COREBOOT_END_ADDR   0xD0000000
 #define CBFS_DRAM_EN_ADDR   0x4003e000
 #define  CBFS_DRAM_MAGIC    0x4452414D // "DRAM"
+
+static void *coreboot_addr;
 
 void reloc_patcher(u32 payload_dst, u32 payload_src, u32 payload_size)
 {
@@ -154,7 +156,7 @@ void reloc_patcher(u32 payload_dst, u32 payload_src, u32 payload_size)
 
 	if (payload_size == 0x7000)
 	{
-		memcpy((u8 *)(payload_src + ALIGN(PATCHED_RELOC_SZ, 0x10)), (u8 *)COREBOOT_ADDR, 0x7000); //Bootblock
+		memcpy((u8 *)(payload_src + ALIGN(PATCHED_RELOC_SZ, 0x10)), coreboot_addr, 0x7000); //Bootblock
 		*(vu32 *)CBFS_DRAM_EN_ADDR = CBFS_DRAM_MAGIC;
 	}
 }
@@ -184,7 +186,10 @@ int launch_payload(char *path)
 		if (size < 0x30000)
 			buf = (void *)RCM_PAYLOAD_ADDR;
 		else
-			buf = (void *)COREBOOT_ADDR;
+		{
+			coreboot_addr = (void *)(COREBOOT_END_ADDR - size);
+			buf = coreboot_addr;
+		}
 
 		if (f_read(&fp, buf, size, NULL))
 		{
@@ -402,26 +407,35 @@ void _get_key_generations(char *sysnand_label, char *emunand_label) {
 
 extern void pivot_stack(u32 stack_top);
 
-// todo: chainload to reboot payload or payloads folder option?
-
 void ipl_main()
 {
+	// Do initial HW configuration. This is compatible with consecutive reruns without a reset.
 	config_hw();
+
+	// Pivot the stack so we have enough space.
 	pivot_stack(IPL_STACK_TOP);
+
+	// Tegra/Horizon configuration goes to 0x80000000+, package2 goes to 0xA9800000, we place our heap in between.
 	heap_init(IPL_HEAP_START);
 
+	// Set bootloader's default configuration.
 	set_default_configuration();
 
 	sd_mount();
+
 	minerva_init();
 	minerva_change_freq(FREQ_1600);
 
 	display_init();
+
 	u32 *fb = display_init_framebuffer();
 	gfx_init_ctxt(fb, 720, 1280, 720);
+
 	gfx_con_init();
+
 	display_backlight_pwm_init();
 
+	// Overclock BPMP.
 	bpmp_clk_rate_set(BPMP_CLK_DEFAULT_BOOST);
 
 	h_cfg.emummc_force_disable = emummc_load_cfg();
@@ -445,6 +459,7 @@ void ipl_main()
 	while (true)
 		tui_do_menu(&menu_top);
 
+	// Halt BPMP if we managed to get out of execution.
 	while (true)
 		bpmp_halt();
 }

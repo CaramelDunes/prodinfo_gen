@@ -68,13 +68,16 @@ void pkg2_get_newkern_info(u8 *kern_data)
 	pkg2_newkern_ini1_end   = *(u32 *)(kern_data + pkg2_newkern_ini1_val + 0x8);
 	}
 
-void pkg2_parse_kips(link_t *info, pkg2_hdr_t *pkg2, bool *new_pkg2)
+bool pkg2_parse_kips(link_t *info, pkg2_hdr_t *pkg2, bool *new_pkg2)
 {
 	u8 *ptr;
 	// Check for new pkg2 type.
 	if (!pkg2->sec_size[PKG2_SEC_INI1])
 	{
 		pkg2_get_newkern_info(pkg2->data);
+
+		if (!pkg2_newkern_ini1_start)
+			return false;
 
 		ptr = pkg2->data + pkg2_newkern_ini1_start;
 		*new_pkg2 = true;
@@ -95,6 +98,8 @@ void pkg2_parse_kips(link_t *info, pkg2_hdr_t *pkg2, bool *new_pkg2)
 		ptr += ki->size;
 DPRINTF(" kip1 %d:%s @ %08X (%08X)\n", i, kip1->name, (u32)kip1, ki->size);
 	}
+
+	return true;
 }
 
 int pkg2_decompress_kip(pkg2_kip1_info_t* ki, u32 sectsToDecomp)

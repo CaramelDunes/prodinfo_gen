@@ -441,7 +441,10 @@ get_tsec: ;
 
     LIST_INIT(kip1_info);
     bool new_pkg2;
-    pkg2_parse_kips(&kip1_info, pkg2_hdr, &new_pkg2);
+    if (!pkg2_parse_kips(&kip1_info, pkg2_hdr, &new_pkg2)) {
+        EPRINTF("Unable to locate INI1.");
+        goto pkg2_done;
+    }
     LIST_FOREACH_ENTRY(pkg2_kip1_info_t, ki_tmp, &kip1_info, link) {
         if(ki_tmp->kip1->tid == 0x0100000000000000ULL) {
             ki = malloc(sizeof(pkg2_kip1_info_t));

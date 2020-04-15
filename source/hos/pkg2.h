@@ -87,7 +87,7 @@ typedef struct _pkg2_kip1_info_t
 	link_t link;
 } pkg2_kip1_info_t;
 
-void pkg2_parse_kips(link_t *info, pkg2_hdr_t *pkg2, bool *new_pkg2);
+bool pkg2_parse_kips(link_t *info, pkg2_hdr_t *pkg2, bool *new_pkg2);
 int pkg2_decompress_kip(pkg2_kip1_info_t* ki, u32 sectsToDecomp);
 pkg2_hdr_t *pkg2_decrypt(void *data);
 
