@@ -19,6 +19,7 @@
 
 #include <string.h>
 
+#include "../../common/memory_map.h"
 #include "../sec/se.h"
 #include "../mem/heap.h"
 #include "../soc/bpmp.h"
@@ -94,7 +95,7 @@ static int _se_wait()
 
 static int _se_execute(u32 op, void *dst, u32 dst_size, const void *src, u32 src_size)
 {
-	se_ll_t *ll_dst = (se_ll_t *)0xECFFFFE0, *ll_src = (se_ll_t *)0xECFFFFF0;
+	se_ll_t *ll_dst = (se_ll_t *)(NYX_STORAGE_ADDR - 0x20), *ll_src = (se_ll_t *)(NYX_STORAGE_ADDR - 0x10);
 
 	if (dst)
 	{
@@ -324,8 +325,10 @@ int se_aes_xts_crypt_sec(u32 ks1, u32 ks2, u32 enc, u64 sec, void *dst, const vo
 {
 	int res = 0;
 	u8 *tweak = (u8 *)malloc(0x10);
-	u8 *pdst = (u8 *)dst;
-	u8 *psrc = (u8 *)src;
+	u8 *temptweak = (u8 *)malloc(0x10);
+	u32 *pdst = (u32 *)dst;
+    u32 *psrc = (u32 *)src;
+    u32 *ptweak = (u32 *)tweak;
 
 	//Generate tweak.
 	for (int i = 0xF; i >= 0; i--)
@@ -336,23 +339,34 @@ int se_aes_xts_crypt_sec(u32 ks1, u32 ks2, u32 enc, u64 sec, void *dst, const vo
 	if (!se_aes_crypt_block_ecb(ks1, 1, tweak, tweak))
 		goto out;
 
+	memcpy(temptweak, tweak, 0x10);
+
 	//We are assuming a 0x10-aligned sector size in this implementation.
 	for (u32 i = 0; i < secsize / 0x10; i++)
 	{
-		for (u32 j = 0; j < 0x10; j++)
-			pdst[j] = psrc[j] ^ tweak[j];
-		if (!se_aes_crypt_block_ecb(ks2, enc, pdst, pdst))
-			goto out;
-		for (u32 j = 0; j < 0x10; j++)
-			pdst[j] = pdst[j] ^ tweak[j];
+		for (u32 j = 0; j < 4; j++)
+			pdst[j] = psrc[j] ^ ptweak[j];
 		_gf256_mul_x_le(tweak);
-		psrc += 0x10;
-		pdst += 0x10;
+		psrc += 4;
+		pdst += 4;
+	}
+
+	se_aes_crypt_ecb(ks2, enc, dst, secsize, dst, secsize);
+
+	pdst = (u32 *)dst;
+
+	memcpy(tweak, temptweak, 0x10);
+	for (u32 i = 0; i < secsize / 0x10; i++) {
+		for (u32 j = 0; j < 4; j++)
+			pdst[j] = pdst[j] ^ ptweak[j];
+		_gf256_mul_x_le(tweak);
+		pdst += 4;
 	}
 
 	res = 1;
 
 out:;
+	free(temptweak);
 	free(tweak);
 	return res;
 }
