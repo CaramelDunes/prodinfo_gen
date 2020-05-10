@@ -54,6 +54,8 @@ extern int  sd_save_to_file(void *buf, u32 size, const char *filename);
 extern hekate_config h_cfg;
 
 extern bool clear_sector_cache;
+extern bool lock_sector_cache;
+extern u32 secindex;
 
 u32 _key_count = 0, _titlekey_count = 0;
 u32 color_idx = 0;
@@ -580,6 +582,7 @@ pkg2_done:
         goto dismount;
     }
 
+    bool pkg1_not_100 = memcmp(pkg1_id->id, "2016", 4);
     path[25] = '/';
     while (!f_readdir(&dir, &fno) && fno.fname[0] && titles_found < title_limit) {
         minerva_periodic_training();
@@ -594,7 +597,7 @@ pkg2_done:
         }
         se_aes_xts_crypt(5, 4, 0, 1, dec_header + 0x200, dec_header, 32, 1);
         // es doesn't contain es key sources on 1.0.0
-        if (memcmp(pkg1_id->id, "2016", 4) && _read_le_u32(dec_header, 0x210) == 0x33 && dec_header[0x205] == 0) {
+        if (pkg1_not_100 && _read_le_u32(dec_header, 0x210) == 0x33 && dec_header[0x205] == 0) {
             u8 hash_order[3] = {0, 1, 2};
             if (pkg1_id->kb >= KB_FIRMWARE_VERSION_500) {
                 hash_order[0] = 1;
@@ -602,6 +605,7 @@ pkg2_done:
             }
             hash_index = 0;
             // decrypt only what is needed to locate needed keys
+            lock_sector_cache = true;
             temp_file = (u8*)_nca_process(5, 4, &fp, pkg1_id->key_info.es_offset, 0xc0, key_area_key);
             for (u32 i = 0; i <= 0xb0; ) {
                 se_calc_sha256(temp_hash, temp_file + i, 0x10);
@@ -618,7 +622,9 @@ pkg2_done:
             free(temp_file);
             temp_file = NULL;
             titles_found++;
+            lock_sector_cache = false;
         } else if (_read_le_u32(dec_header, 0x210) == 0x24 && dec_header[0x205] == 0) {
+            lock_sector_cache = true;
             temp_file = (u8*)_nca_process(5, 4, &fp, pkg1_id->key_info.ssl_offset, 0x70, key_area_key);
             for (u32 i = 0; i <= 0x60; i++) {
                 se_calc_sha256(temp_hash, temp_file + i, 0x10);
@@ -638,6 +644,7 @@ pkg2_done:
             free(temp_file);
             temp_file = NULL;
             titles_found++;
+            lock_sector_cache = false;
         }
         f_close(&fp);
     }
@@ -717,8 +724,8 @@ get_titlekeys:
     se_aes_key_set(8, bis_key[0] + 0x00, 0x10);
     se_aes_key_set(9, bis_key[0] + 0x10, 0x10);
 
-    u32 buf_size = 0x4000;
-    u8 *buffer = (u8 *)malloc(buf_size);
+    u32 buf_size = 0x40000;
+    u8 *buffer = (u8 *)MIXD_BUF_ALIGNED;
 
     u8 keypair[0x230] = {0};
 
@@ -731,7 +738,6 @@ get_titlekeys:
 
     if (_read_le_u32(buffer, 0) != 0x304C4143) {
         EPRINTF("CAL0 magic not found. Check BIS key 0.");
-        free(buffer);
         goto dismount;
     }
 
@@ -761,13 +767,11 @@ get_titlekeys:
     // Check public exponent is 0x10001 big endian
     if (E[0] != 0 || E[1] != 1 || E[2] != 0 || E[3] != 1) {
         EPRINTF("Invalid public exponent.");
-        free(buffer);
         goto dismount;
     }
 
     if (!_test_key_pair(E, D, N)) {
         EPRINTF("Invalid keypair. Check eticket_rsa_kek.");
-        free(buffer);
         goto dismount;
     }
 
@@ -776,25 +780,28 @@ get_titlekeys:
     u32 br = buf_size;
     u32 file_tkey_count = 0;
     u64 total_br = 0;
-    rights_ids = (u8 *)malloc(0x40000);
-    titlekeys = (u8 *)malloc(0x40000);
+    rights_ids = (u8 *)(MIXD_BUF_ALIGNED + 0x40000);
+    titlekeys = (u8 *)(MIXD_BUF_ALIGNED + 0x80000);
     save_ctx = calloc(1, sizeof(save_ctx_t));
     u8 M[0x100];
     if (f_open(&fp, "emmc:/save/80000000000000E1", FA_READ | FA_OPEN_EXISTING)) {
         EPRINTF("Unable to open e1 save. Skipping.");
-        free(buffer);
         goto dismount;
     }
 
+    DWORD *clmt = f_expand_cltbl(&fp, buf_size, 0);
     u32 pct = 0, last_pct = 0;
     tui_pbar(save_x, save_y, pct, COLOR_GREEN, 0xFF155500);
 
     save_ctx->file = &fp;
     save_ctx->tool_ctx.action = 0;
     memcpy(save_ctx->save_mac_key, save_mac_key, 0x10);
+    clear_sector_cache = true;
     save_process_success = save_process(save_ctx);
     if (!save_process_success) {
         EPRINTF("Failed to process e1 save.");
+        f_close(&fp);
+        free(clmt);
         goto dismount;
     }
 
@@ -804,6 +811,8 @@ get_titlekeys:
     save_fs_list_entry_t entry = {0, "", {0}, 0};
     if (!save_hierarchical_file_table_get_file_entry_by_path(&save_ctx->save_filesystem_core.file_table, ticket_list_bin_path, &entry)) {
         EPRINTF("Unable to locate ticket_list.bin in e1.");
+        f_close(&fp);
+        free(clmt);
         goto dismount;
     }
     save_open_fat_storage(&save_ctx->save_filesystem_core, &fat_storage, entry.value.save_file_info.start_block);
@@ -819,6 +828,8 @@ get_titlekeys:
     }
     if (!save_hierarchical_file_table_get_file_entry_by_path(&save_ctx->save_filesystem_core.file_table, ticket_bin_path, &entry)) {
         EPRINTF("Unable to locate ticket.bin in e1 save.");
+        f_close(&fp);
+        free(clmt);
         goto dismount;
     }
     save_open_fat_storage(&save_ctx->save_filesystem_core, &fat_storage, entry.value.save_file_info.start_block);
@@ -859,21 +870,28 @@ get_titlekeys:
     u32 common_titlekey_count = _titlekey_count;
     if (f_open(&fp, "emmc:/save/80000000000000E2", FA_READ | FA_OPEN_EXISTING)) {
         EPRINTF("Unable to open e2 save. Skipping.");
-        free(buffer);
+        free(clmt);
         goto dismount;
     }
 
+    fp.cltbl = clmt;
+    clmt = f_expand_cltbl(&fp, buf_size, 0);
     save_ctx->file = &fp;
     save_ctx->tool_ctx.action = 0;
     memcpy(save_ctx->save_mac_key, save_mac_key, 0x10);
+    clear_sector_cache = true;
     save_process_success = save_process(save_ctx);
     if (!save_process_success) {
         EPRINTF("Failed to process e2 save.");
+        f_close(&fp);
+        free(clmt);
         goto dismount;
     }
 
     if (!save_hierarchical_file_table_get_file_entry_by_path(&save_ctx->save_filesystem_core.file_table, ticket_list_bin_path, &entry)) {
         EPRINTF("Unable to locate ticket_list.bin in e2 save.");
+        f_close(&fp);
+        free(clmt);
         goto dismount;
     }
     save_open_fat_storage(&save_ctx->save_filesystem_core, &fat_storage, entry.value.save_file_info.start_block);
@@ -892,6 +910,8 @@ get_titlekeys:
     }
     if (!save_hierarchical_file_table_get_file_entry_by_path(&save_ctx->save_filesystem_core.file_table, ticket_bin_path, &entry)) {
         EPRINTF("Unable to locate ticket.bin in e2 save.");
+        f_close(&fp);
+        free(clmt);
         goto dismount;
     }
 
@@ -930,8 +950,8 @@ get_titlekeys:
         }
     }
     tui_pbar(save_x, save_y, 100, COLOR_GREEN, 0xFF155500);
-    free(buffer);
     f_close(&fp);
+    free(clmt);
 
     gfx_con_setpos(0, save_y);
     TPRINTFARGS("\n%kPersonalized... ", colors[(color_idx++) % 6]);
@@ -1053,8 +1073,6 @@ key_output: ;
         EPRINTF("Unable to save titlekeys to SD.");
 
 free_buffers:
-    free(rights_ids);
-    free(titlekeys);
     free(text_buffer);
 
 out_wait:

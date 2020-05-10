@@ -45,10 +45,11 @@ typedef struct {
     u8  cached_sector[0x200];
 } sector_cache_t;
 
-#define MAX_SEC_CACHE_ENTRIES 128
-static sector_cache_t *sector_cache = NULL;
+#define MAX_SEC_CACHE_ENTRIES 256
+static sector_cache_t *sector_cache = (sector_cache_t *)(MIXD_BUF_ALIGNED + 0x100000); //NULL;
 u32 secindex = 0;
 bool clear_sector_cache = false;
+bool lock_sector_cache = false;
 
 DSTATUS disk_status (
     BYTE pdrv /* Physical drive number to identify the drive */
@@ -154,14 +155,14 @@ DRESULT disk_read (
         bool needs_cache_sector = false;
 
         if (secindex == 0 || clear_sector_cache) {
-            if (!sector_cache)
-                sector_cache = (sector_cache_t *)malloc(sizeof(sector_cache_t) * MAX_SEC_CACHE_ENTRIES);
             clear_sector_cache = false;
+            lock_sector_cache = false;
             secindex = 0;
         }
 
         u32 s = 0;
-        if (count == 1) {
+        // only attempt to cache single-sector reads as these are most likely to be repeated (eg. rereading FAT)
+        if (!lock_sector_cache && count == 1) {
             for ( ; s < secindex; s++) {
                 if (sector_cache[s].sector == sector) {
                     sector_cache[s].visit_count++;
