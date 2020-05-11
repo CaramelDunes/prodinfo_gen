@@ -402,9 +402,6 @@ void _get_key_generations(char *sysnand_label, char *emunand_label) {
 	ment_top[1].caption = emunand_label;
 }
 
-#define IPL_STACK_TOP  0x90010000
-#define IPL_HEAP_START 0x90020000
-
 extern void pivot_stack(u32 stack_top);
 
 void ipl_main()
