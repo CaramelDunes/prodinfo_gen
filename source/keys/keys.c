@@ -789,7 +789,6 @@ get_titlekeys:
         goto dismount;
     }
 
-    DWORD *clmt = f_expand_cltbl(&fp, buf_size, 0);
     u32 pct = 0, last_pct = 0;
     tui_pbar(save_x, save_y, pct, COLOR_GREEN, 0xFF155500);
 
@@ -801,7 +800,6 @@ get_titlekeys:
     if (!save_process_success) {
         EPRINTF("Failed to process e1 save.");
         f_close(&fp);
-        free(clmt);
         goto dismount;
     }
 
@@ -812,7 +810,6 @@ get_titlekeys:
     if (!save_hierarchical_file_table_get_file_entry_by_path(&save_ctx->save_filesystem_core.file_table, ticket_list_bin_path, &entry)) {
         EPRINTF("Unable to locate ticket_list.bin in e1.");
         f_close(&fp);
-        free(clmt);
         goto dismount;
     }
     save_open_fat_storage(&save_ctx->save_filesystem_core, &fat_storage, entry.value.save_file_info.start_block);
@@ -829,7 +826,6 @@ get_titlekeys:
     if (!save_hierarchical_file_table_get_file_entry_by_path(&save_ctx->save_filesystem_core.file_table, ticket_bin_path, &entry)) {
         EPRINTF("Unable to locate ticket.bin in e1 save.");
         f_close(&fp);
-        free(clmt);
         goto dismount;
     }
     save_open_fat_storage(&save_ctx->save_filesystem_core, &fat_storage, entry.value.save_file_info.start_block);
@@ -870,12 +866,9 @@ get_titlekeys:
     u32 common_titlekey_count = _titlekey_count;
     if (f_open(&fp, "emmc:/save/80000000000000E2", FA_READ | FA_OPEN_EXISTING)) {
         EPRINTF("Unable to open e2 save. Skipping.");
-        free(clmt);
         goto dismount;
     }
 
-    fp.cltbl = clmt;
-    clmt = f_expand_cltbl(&fp, buf_size, 0);
     save_ctx->file = &fp;
     save_ctx->tool_ctx.action = 0;
     memcpy(save_ctx->save_mac_key, save_mac_key, 0x10);
@@ -884,14 +877,12 @@ get_titlekeys:
     if (!save_process_success) {
         EPRINTF("Failed to process e2 save.");
         f_close(&fp);
-        free(clmt);
         goto dismount;
     }
 
     if (!save_hierarchical_file_table_get_file_entry_by_path(&save_ctx->save_filesystem_core.file_table, ticket_list_bin_path, &entry)) {
         EPRINTF("Unable to locate ticket_list.bin in e2 save.");
         f_close(&fp);
-        free(clmt);
         goto dismount;
     }
     save_open_fat_storage(&save_ctx->save_filesystem_core, &fat_storage, entry.value.save_file_info.start_block);
@@ -911,7 +902,6 @@ get_titlekeys:
     if (!save_hierarchical_file_table_get_file_entry_by_path(&save_ctx->save_filesystem_core.file_table, ticket_bin_path, &entry)) {
         EPRINTF("Unable to locate ticket.bin in e2 save.");
         f_close(&fp);
-        free(clmt);
         goto dismount;
     }
 
@@ -951,7 +941,6 @@ get_titlekeys:
     }
     tui_pbar(save_x, save_y, 100, COLOR_GREEN, 0xFF155500);
     f_close(&fp);
-    free(clmt);
 
     gfx_con_setpos(0, save_y);
     TPRINTFARGS("\n%kPersonalized... ", colors[(color_idx++) % 6]);
