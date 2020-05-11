@@ -474,16 +474,12 @@ static inline uint32_t save_allocation_table_get_free_list_block_index(allocatio
 
 bool save_process(save_ctx_t *ctx);
 bool save_process_header(save_ctx_t *ctx);
-void save_save(save_ctx_t *ctx);
-void save_print(save_ctx_t *ctx);
 
 void save_free_contexts(save_ctx_t *ctx);
 
 void save_open_fat_storage(save_filesystem_ctx_t *ctx, allocation_table_storage_ctx_t *storage_ctx, uint32_t block_index);
 uint32_t save_allocation_table_storage_read(allocation_table_storage_ctx_t *ctx, void *buffer, uint64_t offset, size_t count);
 int save_fs_list_get_value(save_filesystem_list_ctx_t *ctx, uint32_t index, save_fs_list_entry_t *value);
-uint32_t save_fs_get_index_from_key(save_filesystem_list_ctx_t *ctx, save_entry_key_t *key, uint32_t *prev_index);
-int save_hierarchical_file_table_find_path_recursive(hierarchical_save_file_table_ctx_t *ctx, save_entry_key_t *key, char *path);
-int save_hierarchical_file_table_get_file_entry_by_path(hierarchical_save_file_table_ctx_t *ctx, char *path, save_fs_list_entry_t *entry);
+int save_hierarchical_file_table_get_file_entry_by_path(hierarchical_save_file_table_ctx_t *ctx, const char *path, save_fs_list_entry_t *entry);
 
 #endif

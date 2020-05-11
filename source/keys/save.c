@@ -1,3 +1,4 @@
+#include <stdint.h>
 #include <string.h>
 #include "save.h"
 
@@ -237,14 +238,14 @@ size_t save_ivfc_level_fread(ivfc_level_save_ctx_t *ctx, void *buffer, uint64_t 
 
 void save_ivfc_storage_read(integrity_verification_storage_ctx_t *ctx, void *buffer, uint64_t offset, size_t count, uint32_t verify) {
     if (count > ctx->sector_size) {
-        EPRINTF("IVFC read exceeds sector size!\n");
+        EPRINTF("IVFC read exceeds sector size!");
         return;
     }
 
     uint64_t block_index = offset / ctx->sector_size;
 
     if (ctx->block_validities[block_index] == VALIDITY_INVALID && verify) {
-        EPRINTFARGS("Hash error from previous check\n found at offset %x count %x!\n", (u32)offset, count);
+        EPRINTFARGS("Hash error from previous check\n found at offset %x count %x!", (u32)offset, count);
         return;
     }
 
@@ -285,7 +286,7 @@ void save_ivfc_storage_read(integrity_verification_storage_ctx_t *ctx, void *buf
     }
 
     if (ctx->block_validities[block_index] == VALIDITY_INVALID && verify) {
-        EPRINTFARGS("Hash error from current check\n found at offset %x count %x!\n", (u32)offset, count);
+        EPRINTFARGS("Hash error from current check\n found at offset %x count %x!", (u32)offset, count);
         return;
     }
 }
@@ -297,7 +298,7 @@ uint32_t save_allocation_table_read_entry_with_length(allocation_table_ctx_t *ct
     allocation_table_entry_t *entries = (allocation_table_entry_t *)((uint8_t *)(ctx->base_storage) + entry_index * SAVE_FAT_ENTRY_SIZE);
     if ((entries[0].next & 0x80000000) == 0) {
         if (entries[0].prev & 0x80000000 && entries[0].prev != 0x80000000) {
-            EPRINTF("Invalid range entry in allocation table!\n");
+            EPRINTF("Invalid range entry in allocation table!");
             return 0;
         }
     } else {
@@ -330,7 +331,7 @@ uint32_t save_allocation_table_get_list_length(allocation_table_ctx_t *ctx, uint
         total_length += save_allocation_table_read_entry_with_length(ctx, &entry);
         nodes_iterated++;
         if (nodes_iterated > table_size) {
-            EPRINTF("Cycle detected in allocation table!\n");
+            EPRINTF("Cycle detected in allocation table!");
             return 0;
         }
     }
@@ -357,7 +358,7 @@ void save_allocation_table_iterator_begin(allocation_table_iterator_ctx_t *ctx, 
     ctx->prev_block = entry.prev;
 
     if (ctx->prev_block != 0xFFFFFFFF) {
-        EPRINTFARGS("Attempted to start FAT iteration from\n invalid block %x!\n", initial_block);
+        EPRINTFARGS("Attempted to start FAT iteration from\n invalid block %x!", initial_block);
         return;
     }
 }
@@ -456,7 +457,7 @@ int save_fs_list_get_value(save_filesystem_list_ctx_t *ctx, uint32_t index, save
     return 1;
 }
 
-uint32_t save_fs_get_index_from_key(save_filesystem_list_ctx_t *ctx, save_entry_key_t *key, uint32_t *prev_index) {
+uint32_t save_fs_list_get_index_from_key(save_filesystem_list_ctx_t *ctx, save_entry_key_t *key, uint32_t *prev_index) {
     save_fs_list_entry_t entry;
     uint32_t capacity = save_fs_list_get_capacity(ctx);
     save_fs_list_read_entry(ctx, ctx->used_list_head_index, &entry);
@@ -483,18 +484,18 @@ uint32_t save_fs_get_index_from_key(save_filesystem_list_ctx_t *ctx, save_entry_
     return 0xFFFFFFFF;
 }
 
-int save_hierarchical_file_table_find_path_recursive(hierarchical_save_file_table_ctx_t *ctx, save_entry_key_t *key, char *path) {
+int save_hierarchical_file_table_find_path_recursive(hierarchical_save_file_table_ctx_t *ctx, save_entry_key_t *key, const char *path) {
     key->parent = 0;
-    char *pos = strchr(path, '/');
+    const char *pos = strchr(path, '/');
     while (pos) {
         memset(key->name, 0, SAVE_FS_LIST_MAX_NAME_LENGTH);
-        char *tmp = strchr(pos, '/');
+        const char *tmp = strchr(pos, '/');
         if (!tmp) {
             memcpy(key->name, pos, strlen(pos));
             break;
         }
         memcpy(key->name, pos, tmp - pos);
-        key->parent = save_fs_get_index_from_key(&ctx->directory_table, key, NULL);
+        key->parent = save_fs_list_get_index_from_key(&ctx->directory_table, key, NULL);
         if (key->parent == 0xFFFFFFFF)
             return 0;
         pos = tmp + 1;
@@ -529,13 +530,13 @@ int save_hierarchical_file_table_find_next_directory(hierarchical_save_file_tabl
     return 1;
 }
 
-int save_hierarchical_file_table_get_file_entry_by_path(hierarchical_save_file_table_ctx_t *ctx, char *path, save_fs_list_entry_t *entry) {
+int save_hierarchical_file_table_get_file_entry_by_path(hierarchical_save_file_table_ctx_t *ctx, const char *path, save_fs_list_entry_t *entry) {
     save_entry_key_t key;
     if (!save_hierarchical_file_table_find_path_recursive(ctx, &key, path)) {
         EPRINTF("Unable to locate file.");
         return 0;
     }
-    u32 index = save_fs_get_index_from_key(&ctx->file_table, &key, NULL);
+    u32 index = save_fs_list_get_index_from_key(&ctx->file_table, &key, NULL);
     if (index == 0xFFFFFFFF) {
         EPRINTF("Unable to get table index for file.");
         return 0;
@@ -643,13 +644,12 @@ bool save_process(save_ctx_t *ctx) {
         }
 
         if (!save_process_header(ctx) || (ctx->header_hash_validity == VALIDITY_INVALID)) {
-            EPRINTF("Error: Save header is invalid!\n");
+            EPRINTF("Error: Save header is invalid!");
             return false;
         }
     }
 
-    unsigned char cmac[0x10];
-    memset(cmac, 0, 0x10);
+    unsigned char cmac[0x10] = {};
     se_aes_key_set(3, ctx->save_mac_key, 0x10);
     se_aes_cmac(3, cmac, 0x10, &ctx->header.layout, sizeof(ctx->header.layout));
     if (memcmp(cmac, &ctx->header.cmac, 0x10) == 0) {
@@ -775,7 +775,7 @@ bool save_process_header(save_ctx_t *ctx) {
         ctx->header.save_header.magic != MAGIC_SAVE || ctx->header.main_remap_header.magic != MAGIC_RMAP ||
         ctx->header.meta_remap_header.magic != MAGIC_RMAP)
     {
-        EPRINTF("Error: Save header is corrupt!\n");
+        EPRINTF("Error: Save header is corrupt!");
         return false;
     }
 
