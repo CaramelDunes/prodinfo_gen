@@ -165,6 +165,8 @@ void dump_keys() {
         goto out_wait;
     }
 
+    bool pkg1_not_100 = memcmp(pkg1_id->id, "2016", 4);
+
     bool found_tsec_fw = false;
     for (const u32 *pos = (const u32 *)pkg1; (u8 *)pos < pkg1 + 0x40000; pos += 0x100 / sizeof(u32)) {
         if (*pos == 0xCF42004D) {
@@ -468,7 +470,7 @@ get_tsec: ;
     u8 hash_index = 0;
     const u8 key_lengths[13] = {0x10, 0x20, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x20, 0x10, 0x20, 0x20};
 
-    if (!memcmp(pkg1_id->id, "2016", 4)) {
+    if (!pkg1_not_100) {
         // 1.0.0 doesn't have SD keys at all and the first key isn't aligned with the rest
         memcpy(fs_keys[2], ki->kip1->data + ki->kip1->sections[0].size_comp + 0x1ae0e, 0x10);
         hash_index = 1;
@@ -564,7 +566,7 @@ pkg2_done:
     u8 *dec_header = (u8*)malloc(0x600);
     char path[100] = "emmc:/Contents/registered";
     u32 titles_found = 0, title_limit = 2, read_bytes = 0;
-    if (!memcmp(pkg1_id->id, "2016", 4))
+    if (!pkg1_not_100)
         title_limit = 1;
     u8 *temp_file = NULL;
 
@@ -573,16 +575,23 @@ pkg2_done:
         goto dismount;
     }
 
+    gfx_printf("%kSector cache... ", colors[(color_idx++) % 6]);
     // prepopulate /Contents/registered in decrypted sector cache
     while (!f_readdir(&dir, &fno) && fno.fname[0]) {}
     f_closedir(&dir);
+    TPRINTF();
+
+    if (pkg1_not_100) {
+        gfx_printf("%kES & SSL keys...", colors[(color_idx++) % 6]);
+    } else {
+        gfx_printf("%kSSL keys...     ", colors[(color_idx++) % 6]);
+    }
 
     if (f_opendir(&dir, path)) {
         EPRINTF("Unable to open System:/Contents/registered.");
         goto dismount;
     }
 
-    bool pkg1_not_100 = memcmp(pkg1_id->id, "2016", 4);
     path[25] = '/';
     while (!f_readdir(&dir, &fno) && fno.fname[0] && titles_found < title_limit) {
         minerva_periodic_training();
@@ -633,7 +642,7 @@ pkg2_done:
                     // only get ssl_rsa_kek_source_x from SSL on 1.0.0
                     // we get it from ES on every other firmware
                     // and it's located oddly distant from ssl_rsa_kek_source_y on >= 6.0.0
-                    if (!memcmp(pkg1_id->id, "2016", 4)) {
+                    if (!pkg1_not_100) {
                         se_calc_sha256(temp_hash, temp_file + i + 0x10, 0x10);
                         if (!memcmp(temp_hash, ssl_hashes_sha256[0], 0x10))
                             memcpy(es_keys[2], temp_file + i + 0x10, 0x10);
@@ -665,11 +674,7 @@ pkg2_done:
         se_aes_crypt_block_ecb(7, 0, ssl_rsa_kek, ssl_keys);
     }
 
-    if (memcmp(pkg1_id->id, "2016", 4)) {
-        TPRINTFARGS("%kES & SSL keys...", colors[(color_idx++) % 6]);
-    } else {
-        TPRINTFARGS("%kSSL keys...     ", colors[(color_idx++) % 6]);
-    }
+    TPRINTF();
 
     char private_path[200] = "sd:/";
     if (emu_cfg.nintendo_path && (emu_cfg.enabled || !h_cfg.emummc_force_disable)) {
@@ -790,7 +795,6 @@ get_titlekeys:
     }
 
     u32 pct = 0, last_pct = 0;
-    tui_pbar(save_x, save_y, pct, COLOR_GREEN, 0xFF155500);
 
     save_ctx->file = &fp;
     save_ctx->tool_ctx.action = 0;
