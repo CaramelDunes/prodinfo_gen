@@ -147,7 +147,8 @@ void *tui_do_menu(menu_t *menu)
 				gfx_con_setcol(0xFF1B1B1B, 1, 0xFFCCCCCC);
 			else
 				gfx_con_setcol(0xFFCCCCCC, 1, 0xFF1B1B1B);
-			if (menu->ents[cnt].type != MENT_CHGLINE && menu->ents[cnt].type != MENT_MENU) {
+			if (menu->ents[cnt].type != MENT_CHGLINE && menu->ents[cnt].type != MENT_MENU)
+			{
 				if (cnt == idx)
 					gfx_printf(" %s", menu->ents[cnt].caption);
 				else

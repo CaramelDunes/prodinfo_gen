@@ -320,7 +320,8 @@ void launch_tools()
 
 	if (file_sec)
 	{
-		if (memcmp("sd:/", file_sec, 4)) {
+		if (memcmp("sd:/", file_sec, 4))
+		{
 			memcpy(dir + strlen(dir), "/", 2);
 			memcpy(dir + strlen(dir), file_sec, strlen(file_sec) + 1);
 		}
@@ -371,7 +372,8 @@ ment_t ment_top[] = {
 
 menu_t menu_top = { ment_top, NULL, 0, 0 };
 
-void _get_key_generations(char *sysnand_label, char *emunand_label) {
+void _get_key_generations(char *sysnand_label, char *emunand_label)
+{
 	sdmmc_t sdmmc;
 	sdmmc_storage_t storage;
 	sdmmc_storage_init_mmc(&storage, &sdmmc, SDMMC_4, SDMMC_BUS_WIDTH_8, 4);
@@ -384,7 +386,8 @@ void _get_key_generations(char *sysnand_label, char *emunand_label) {
 	if (pkg1_id)
 		sprintf(sysnand_label + 36, "% 3d", pkg1_id->kb);
 	ment_top[0].caption = sysnand_label;
-	if (h_cfg.emummc_force_disable) {
+	if (h_cfg.emummc_force_disable)
+	{
 		free(pkg1);
 		return;
 	}

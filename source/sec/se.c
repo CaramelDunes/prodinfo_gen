@@ -235,6 +235,16 @@ void se_aes_key_set(u32 ks, const void *key, u32 size)
 	}
 }
 
+void se_aes_iv_set(u32 ks, const void *iv, u32 size)
+{
+	u32 *data = (u32 *)iv;
+	for (u32 i = 0; i < size / 4; i++)
+	{
+		SE(SE_KEYTABLE_REG_OFFSET) = SE_KEYTABLE_SLOT(ks) | 8 | i;
+		SE(SE_KEYTABLE_DATA0_REG_OFFSET) = data[i];
+	}
+}
+
 void se_aes_key_read(u32 ks, void *key, u32 size)
 {
 	u32 *data = (u32 *)key;
@@ -321,6 +331,83 @@ int se_aes_crypt_ctr(u32 ks, void *dst, u32 dst_size, const void *src, u32 src_s
 	return 1;
 }
 
+// random calls were derived from Atmosphère's
+int se_initialize_rng(u32 ks)
+{
+	u8 *output_buf = (u8 *)malloc(0x10);
+
+	SE(SE_CONFIG_REG_OFFSET) = SE_CONFIG_ENC_ALG(ALG_RNG) | SE_CONFIG_DST(DST_MEMORY);
+	SE(SE_CRYPTO_REG_OFFSET) = SE_CRYPTO_KEY_INDEX(ks) | SE_CRYPTO_CORE_SEL(CORE_ENCRYPT) |
+		SE_CRYPTO_INPUT_SEL(INPUT_RANDOM);
+	SE(SE_RNG_CONFIG_REG_OFFSET) = SE_RNG_CONFIG_MODE(DRBG_MODE_FORCE_INSTANTION) | SE_RNG_CONFIG_SRC(DRBG_SRC_ENTROPY);
+	SE(SE_RNG_RESEED_INTERVAL_REG_OFFSET) = 70001;
+	SE(SE_RNG_SRC_CONFIG_REG_OFFSET) = SE_RNG_SRC_CONFIG_RO_ENT_SRC_LOCK(DRBG_RO_ENT_SRC_LOCK_ENABLE) |
+		SE_RNG_SRC_CONFIG_RO_ENT_SRC(DRBG_RO_ENT_SRC_LOCK_ENABLE);
+	SE(SE_BLOCK_COUNT_REG_OFFSET) = 0;
+
+	int res =_se_execute(OP_START, output_buf, 0x10, NULL, 0);
+
+	free(output_buf);
+	return res;
+}
+
+int se_generate_random(u32 ks, void *dst, u32 size)
+{
+	SE(SE_CONFIG_REG_OFFSET) = SE_CONFIG_ENC_ALG(ALG_RNG) | SE_CONFIG_DST(DST_MEMORY);
+	SE(SE_CRYPTO_REG_OFFSET) = SE_CRYPTO_KEY_INDEX(ks) | SE_CRYPTO_CORE_SEL(CORE_ENCRYPT) |
+		SE_CRYPTO_INPUT_SEL(INPUT_RANDOM);
+	SE(SE_RNG_CONFIG_REG_OFFSET) = SE_RNG_CONFIG_MODE(DRBG_MODE_NORMAL) | SE_RNG_CONFIG_SRC(DRBG_SRC_ENTROPY);
+
+	u32 num_blocks = size >> 4;
+	u32 aligned_size = num_blocks << 4;
+	if (num_blocks)
+	{
+		SE(SE_BLOCK_COUNT_REG_OFFSET) = num_blocks - 1;
+		if (!_se_execute(OP_START, dst, aligned_size, NULL, 0))
+			return 0;
+	}
+	if (size > aligned_size)
+		return _se_execute_one_block(OP_START, dst + aligned_size, size - aligned_size, NULL, 0);
+	return 1;
+}
+
+int se_generate_random_key(u32 ks_dst, u32 ks_src)
+{
+	SE(SE_CONFIG_REG_OFFSET) = SE_CONFIG_ENC_ALG(ALG_RNG) | SE_CONFIG_DST(DST_MEMORY);
+	SE(SE_CRYPTO_REG_OFFSET) = SE_CRYPTO_KEY_INDEX(ks_src) | SE_CRYPTO_CORE_SEL(CORE_ENCRYPT) |
+		SE_CRYPTO_INPUT_SEL(INPUT_RANDOM);
+	SE(SE_RNG_CONFIG_REG_OFFSET) = SE_RNG_CONFIG_MODE(DRBG_MODE_NORMAL) | SE_RNG_CONFIG_SRC(DRBG_SRC_ENTROPY);
+
+	SE(SE_CRYPTO_KEYTABLE_DST_REG_OFFSET) = SE_CRYPTO_KEYTABLE_DST_KEY_INDEX(ks_dst);
+	if (!_se_execute(OP_START, NULL, 0, NULL, 0))
+		return 0;
+	SE(SE_CRYPTO_KEYTABLE_DST_REG_OFFSET) = SE_CRYPTO_KEYTABLE_DST_KEY_INDEX(ks_dst) | 1;
+	if (!_se_execute(OP_START, NULL, 0, NULL, 0))
+		return 0;
+
+	return 1;
+}
+
+int se_aes_crypt_cbc(u32 ks, u32 enc, void *dst, u32 dst_size, const void *src, u32 src_size)
+{
+	if (enc)
+	{
+		SE(SE_CONFIG_REG_OFFSET) = SE_CONFIG_ENC_ALG(ALG_AES_ENC) | SE_CONFIG_DST(DST_MEMORY);
+		SE(SE_CRYPTO_REG_OFFSET) = SE_CRYPTO_KEY_INDEX(ks) | SE_CRYPTO_VCTRAM_SEL(VCTRAM_AESOUT) |
+			SE_CRYPTO_CORE_SEL(CORE_ENCRYPT) | SE_CRYPTO_XOR_POS(XOR_TOP) | SE_CRYPTO_INPUT_SEL(INPUT_AHB) |
+			SE_CRYPTO_IV_SEL(IV_ORIGINAL);
+	}
+	else
+	{
+		SE(SE_CONFIG_REG_OFFSET) = SE_CONFIG_DEC_ALG(ALG_AES_DEC) | SE_CONFIG_DST(DST_MEMORY);
+		SE(SE_CRYPTO_REG_OFFSET) = SE_CRYPTO_KEY_INDEX(ks) | SE_CRYPTO_VCTRAM_SEL(VCTRAM_PREVAHB) |
+			SE_CRYPTO_CORE_SEL(CORE_DECRYPT) | SE_CRYPTO_XOR_POS(XOR_BOTTOM) | SE_CRYPTO_INPUT_SEL(INPUT_AHB) |
+			SE_CRYPTO_IV_SEL(IV_ORIGINAL);
+	}
+	SE(SE_BLOCK_COUNT_REG_OFFSET) = (src_size >> 4) - 1;
+	return _se_execute(OP_START, dst, dst_size, src, src_size);
+}
+
 int se_aes_xts_crypt_sec(u32 ks1, u32 ks2, u32 enc, u64 sec, void *dst, const void *src, u32 secsize)
 {
 	int res = 0;
@@ -356,7 +443,8 @@ int se_aes_xts_crypt_sec(u32 ks1, u32 ks2, u32 enc, u64 sec, void *dst, const vo
 	pdst = (u32 *)dst;
 
 	memcpy(tweak, temptweak, 0x10);
-	for (u32 i = 0; i < secsize / 0x10; i++) {
+	for (u32 i = 0; i < secsize / 0x10; i++)
+	{
 		for (u32 j = 0; j < 4; j++)
 			pdst[j] = pdst[j] ^ ptweak[j];
 		_gf256_mul_x_le(tweak);
@@ -404,17 +492,21 @@ int se_aes_cmac(u32 ks, void *dst, u32 dst_size, const void *src, u32 src_size)
 	se_aes_key_iv_clear(ks);
 
 	u32 num_blocks = (src_size + 0xf) >> 4;
-	if (num_blocks > 1) {
+	if (num_blocks > 1)
+	{
 		SE(SE_BLOCK_COUNT_REG_OFFSET) = num_blocks - 2;
 		if (!_se_execute(OP_START, NULL, 0, src, src_size))
 			goto out;
 		SE(SE_CRYPTO_REG_OFFSET) |= SE_CRYPTO_IV_SEL(IV_UPDATED);
 	}
 
-	if (src_size & 0xf) {
+	if (src_size & 0xf)
+	{
 		memcpy(last_block, src + (src_size & ~0xf), src_size & 0xf);
 		last_block[src_size & 0xf] = 0x80;
-	} else if (src_size >= 0x10) {
+	}
+	else if (src_size >= 0x10)
+	{
 		memcpy(last_block, src + src_size - 0x10, 0x10);
 	}
 
@@ -461,7 +553,8 @@ int se_calc_sha256(void *dst, const void *src, u32 src_size)
 	return res;
 }
 
-int se_calc_hmac_sha256(void *dst, const void *src, u32 src_size, const void *key, u32 key_size) {
+int se_calc_hmac_sha256(void *dst, const void *src, u32 src_size, const void *key, u32 key_size)
+{
 	int res = 0;
 	u8 *secret = (u8 *)malloc(0x40);
 	u8 *ipad = (u8 *)malloc(0x40 + src_size);
