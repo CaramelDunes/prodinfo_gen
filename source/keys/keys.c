@@ -84,7 +84,7 @@ static inline u32 _read_le_u32(const void *buffer, u32 offset) {
 }
 
 // key functions
-static bool  _key_exists(const void *data) { return memcmp(data, zeros, 0x10); };
+static int   _key_exists(const void *data) { return memcmp(data, zeros, 0x10) != 0; };
 static void  _save_key(const char *name, const void *data, u32 len, char *outbuf);
 static void  _save_key_family(const char *name, const void *data, u32 start_key, u32 num_keys, u32 len, char *outbuf);
 static void  _generate_kek(u32 ks, const void *key_source, void *master_key, const void *kek_seed, const void *key_seed);
@@ -334,7 +334,7 @@ get_tsec: ;
         emummc_storage_read(&storage, 0x180000 / NX_EMMC_BLOCKSIZE + i, 1, keyblob_block);
         se_aes_key_set(3, keyblob_mac_key[i], 0x10);
         se_aes_cmac(3, keyblob_mac, 0x10, keyblob_block + 0x10, 0xa0);
-        if (memcmp(keyblob_block, keyblob_mac, 0x10)) {
+        if (memcmp(keyblob_block, keyblob_mac, 0x10) != 0) {
             EPRINTFARGS("Keyblob %x corrupt.", i);
             gfx_hexdump(i, keyblob_block, 0x10);
             gfx_hexdump(i, keyblob_mac, 0x10);
@@ -527,8 +527,6 @@ pkg2_done:
             for (u32 j = 0; j < 3; j++) {
                 _generate_kek(8, fs_keys[2 + j], master_key[i], aes_kek_generation_source, NULL);
                 se_aes_crypt_block_ecb(8, 0, key_area_key[j][i], aes_key_generation_source);
-                if (j == 2)
-                    gfx_hexdump(i, key_area_key[j][i], 0x10);
             }
         }
         se_aes_key_set(8, master_key[i], 0x10);
@@ -936,7 +934,7 @@ get_titlekeys:
                 u8 *db = M + 0x21;
                 _mgf1_xor(salt, 0x20, db, 0xdf);
                 _mgf1_xor(db, 0xdf, salt, 0x20);
-                if (memcmp(db, null_hash, 0x20))
+                if (memcmp(db, null_hash, 0x20) != 0)
                     continue;
                 memcpy(titlekeys + 0x10 * _titlekey_count, db + 0xcf, 0x10);
                 _titlekey_count++;
@@ -1090,14 +1088,8 @@ static void _save_key(const char *name, const void *data, u32 len, char *outbuf)
 
 static void _save_key_family(const char *name, const void *data, u32 start_key, u32 num_keys, u32 len, char *outbuf) {
     char temp_name[0x40] = {0};
-    if (memcmp(name, "key_area_key_system", 19) == 0) {
-        gfx_hexdump(0, data, num_keys * 0x10);
-    }
     for (u32 i = 0; i < num_keys; i++) {
         sprintf(temp_name, "%s_%02x", name, i + start_key);
-        if (memcmp(name, "key_area_key_system", 19) == 0) {
-            gfx_printf("attempt save key %x\n", i);
-        }
         _save_key(temp_name, data + i * len, len, outbuf);
     }
 }

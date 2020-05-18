@@ -279,7 +279,7 @@ void save_ivfc_storage_read(integrity_verification_storage_ctx_t *ctx, void *buf
     hash[0x1F] |= 0x80;
 
     free(data_buffer);
-    if (memcmp(hash_buffer, hash, 0x20)) {
+    if (memcmp(hash_buffer, hash, 0x20) != 0) {
         ctx->block_validities[block_index] = VALIDITY_INVALID;
     } else {
         ctx->block_validities[block_index] = VALIDITY_VALID;

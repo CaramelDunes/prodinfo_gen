@@ -237,7 +237,7 @@ void launch_tools()
 
 	if (file_sec)
 	{
-		if (memcmp("sd:/", file_sec, 4))
+		if (memcmp("sd:/", file_sec, 4) != 0)
 		{
 			memcpy(dir + strlen(dir), "/", 2);
 			memcpy(dir + strlen(dir), file_sec, strlen(file_sec) + 1);
