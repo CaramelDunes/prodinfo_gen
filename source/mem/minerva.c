@@ -27,6 +27,7 @@
 #include "../soc/t210.h"
 
 extern volatile nyx_storage_t *nyx_str;
+void (*minerva_cfg)(mtc_config_t *mtc_cfg, void *);
 
 u32 minerva_init()
 {
@@ -37,7 +38,7 @@ u32 minerva_init()
 	memset(mtc_cfg, 0, sizeof(mtc_config_t));
 
 	// Set table to nyx storage.
-	mtc_cfg->mtc_table = (emc_table_t *)&nyx_str->mtc_table;
+	mtc_cfg->mtc_table = (emc_table_t *)nyx_str->mtc_table;
 
 	mtc_cfg->sdram_id = (fuse_read_odm(4) >> 3) & 0x1F;
 	mtc_cfg->init_done = MTC_NEW_MAGIC; // Initialize mtc table.

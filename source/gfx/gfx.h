@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2018 naehrwert
- * Copyright (C) 2018-2019 CTCaer
- * Copyright (C) 2018 M4xw
+ * Copyright (c) 2018-2020 CTCaer
+ * Copyright (c) 2018 M4xw
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -49,7 +49,7 @@ void gfx_set_rect_argb(const u32 *buf, u32 size_x, u32 size_y, u32 pos_x, u32 po
 void gfx_render_bmp_argb(const u32 *buf, u32 size_x, u32 size_y, u32 pos_x, u32 pos_y);
 
 // Global gfx console and context.
-gfx_ctxt_t gfx_ctxt;
-gfx_con_t gfx_con;
+extern gfx_ctxt_t gfx_ctxt;
+extern gfx_con_t gfx_con;
 
 #endif

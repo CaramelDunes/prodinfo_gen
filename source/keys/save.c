@@ -351,7 +351,7 @@ void save_allocation_table_iterator_begin(allocation_table_iterator_ctx_t *ctx, 
     ctx->physical_block = initial_block;
     ctx->virtual_block = 0;
 
-    allocation_table_entry_t entry;
+    allocation_table_entry_t entry = {0, 0};
     entry.next = initial_block;
     ctx->current_segment_size = save_allocation_table_read_entry_with_length(ctx->fat, &entry);
     ctx->next_block = entry.next;
@@ -369,7 +369,7 @@ int save_allocation_table_iterator_move_next(allocation_table_iterator_ctx_t *ct
     ctx->virtual_block += ctx->current_segment_size;
     ctx->physical_block = ctx->next_block;
 
-    allocation_table_entry_t entry;
+    allocation_table_entry_t entry = {0, 0};
     entry.next = ctx->next_block;
     ctx->current_segment_size = save_allocation_table_read_entry_with_length(ctx->fat, &entry);
     ctx->next_block = entry.next;
@@ -383,7 +383,7 @@ int save_allocation_table_iterator_move_prev(allocation_table_iterator_ctx_t *ct
 
     ctx->physical_block = ctx->prev_block;
 
-    allocation_table_entry_t entry;
+    allocation_table_entry_t entry = {0, 0};
     entry.next = ctx->prev_block;
     ctx->current_segment_size = save_allocation_table_read_entry_with_length(ctx->fat, &entry);
     ctx->next_block = entry.next;

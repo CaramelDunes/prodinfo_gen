@@ -18,12 +18,14 @@
 
 #include "sept.h"
 #include "../gfx/di.h"
+#include "../hos/hos.h"
 #include "../libs/fatfs/ff.h"
 #include "../mem/heap.h"
 #include "../soc/hw_init.h"
 #include "../soc/pmc.h"
 #include "../soc/t210.h"
 #include "../storage/nx_emmc.h"
+#include "../storage/nx_sd.h"
 #include "../storage/sdmmc.h"
 #include "../utils/btn.h"
 #include "../utils/types.h"
@@ -58,7 +60,6 @@ u8 warmboot_reboot[] = {
 
 extern u32 color_idx;
 extern boot_cfg_t b_cfg;
-extern void sd_unmount();
 extern void reloc_patcher(u32 payload_dst, u32 payload_src, u32 payload_size);
 
 int reboot_to_sept(const u8 *tsec_fw, const u32 tsec_size, const u32 kb)

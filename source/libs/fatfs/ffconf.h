@@ -43,7 +43,7 @@
 
 #define FF_FASTFS 0
 
-#ifdef FF_FASTFS
+#if FF_FASTFS
 #define FF_USE_FASTSEEK	1
 #else
 #define FF_USE_FASTSEEK	0

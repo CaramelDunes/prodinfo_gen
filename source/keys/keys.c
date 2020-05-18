@@ -20,6 +20,7 @@
 #include "../gfx/di.h"
 #include "../gfx/gfx.h"
 #include "../gfx/tui.h"
+#include "../hos/hos.h"
 #include "../hos/pkg1.h"
 #include "../hos/pkg2.h"
 #include "../hos/sept.h"
@@ -36,6 +37,7 @@
 #include "../soc/t210.h"
 #include "../storage/emummc.h"
 #include "../storage/nx_emmc.h"
+#include "../storage/nx_sd.h"
 #include "../storage/sdmmc.h"
 #include "../utils/btn.h"
 #include "../utils/list.h"
@@ -46,10 +48,6 @@
 #include "save.h"
 
 #include <string.h>
-
-extern bool sd_mount();
-extern void sd_unmount();
-extern int  sd_save_to_file(void *buf, u32 size, const char *filename);
 
 extern hekate_config h_cfg;
 
@@ -149,7 +147,7 @@ void dump_keys() {
     tsec_ctxt_t tsec_ctxt;
     sdmmc_t sdmmc;
 
-    if (!emummc_storage_init_mmc(&storage, &sdmmc)) {
+    if (emummc_storage_init_mmc(&storage, &sdmmc)) {
         EPRINTF("Unable to init MMC.");
         goto out_wait;
     }
@@ -157,7 +155,7 @@ void dump_keys() {
 
     // Read package1.
     u8 *pkg1 = (u8 *)malloc(0x40000);
-    emummc_storage_set_mmc_partition(&storage, 1);
+    emummc_storage_set_mmc_partition(&storage, EMMC_BOOT0);
     emummc_storage_read(&storage, 0x100000 / NX_EMMC_BLOCKSIZE, 0x40000 / NX_EMMC_BLOCKSIZE, pkg1);
     const pkg1_id_t *pkg1_id = pkg1_identify(pkg1);
     if (!pkg1_id) {
@@ -220,11 +218,13 @@ void dump_keys() {
                 EPRINTF("Unable to open /sept/payload.bin to write.");
                 goto out_wait;
             }
+            gfx_printf("%kWrite self to /sept/payload.bin...", colors[(color_idx++) % 6]);
             if (f_write(&fp, (u8 *)IPL_LOAD_ADDR, payload_size, NULL)) {
                 EPRINTF("Unable to write self to /sept/payload.bin.");
                 f_close(&fp);
                 goto out_wait;
             }
+            gfx_printf(" done");
             f_close(&fp);
             gfx_printf("%k\nFirmware 7.x or higher detected.\n\n", colors[(color_idx++) % 6]);
             gfx_printf("%kRenamed /sept/payload.bin", colors[(color_idx++) % 6]);
@@ -388,7 +388,7 @@ get_tsec: ;
     u8 *pkg2 = NULL;
     pkg2_kip1_info_t *ki = NULL;
 
-    emummc_storage_set_mmc_partition(&storage, 0);
+    emummc_storage_set_mmc_partition(&storage, EMMC_GPP);
     // Parse eMMC GPT.
     LIST_INIT(gpt);
     nx_emmc_gpt_parse(&gpt, &storage);

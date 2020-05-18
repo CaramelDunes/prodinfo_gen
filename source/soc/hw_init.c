@@ -34,10 +34,10 @@
 #include "../power/max7762x.h"
 #include "../sec/se.h"
 #include "../sec/se_t210.h"
+#include "../storage/nx_sd.h"
 #include "../storage/sdmmc.h"
 #include "../utils/util.h"
 
-extern sdmmc_t sd_sdmmc;
 extern boot_cfg_t b_cfg;
 extern volatile nyx_storage_t *nyx_str;
 
@@ -314,6 +314,9 @@ void config_hw()
 
 	bpmp_mmu_enable();
 	mc_enable_ahb_redirect();
+
+	// Clear flags from PMC_SCRATCH0
+	PMC(APBDEV_PMC_SCRATCH0) &= ~PMC_SCRATCH0_MODE_PAYLOAD;
 }
 
 void reconfig_hw_workaround(bool extra_reconfig, u32 magic)
