@@ -79,31 +79,6 @@ typedef struct _fss_content_t
 	char name[0x10];
 } fss_content_t;
 
-static void _update_r2p(const char *path)
-{
-	char *r2p_path = malloc(256);
-	u32 path_len = strlen(path);
-	strcpy(r2p_path, path);
-
-	while(path_len)
-	{
-		if ((r2p_path[path_len - 1] == '/') || (r2p_path[path_len - 1] == 0x5C))
-		{
-			r2p_path[path_len] = 0;
-			strcat(r2p_path, "reboot_payload.bin");
-			u8 *r2p_payload = sd_file_read(r2p_path, NULL);
-
-			is_ipl_updated(r2p_payload, r2p_path, h_cfg.updater2p ? true : false);
-
-			free(r2p_payload);
-			break;
-		}
-		path_len--;
-	}
-
-	free(r2p_path);
-}
-
 int parse_fss(launch_ctxt_t *ctxt, const char *path, fss0_sept_t *sept_ctxt)
 {
 	FIL fp;
@@ -223,8 +198,6 @@ int parse_fss(launch_ctxt_t *ctxt, const char *path, fss0_sept_t *sept_ctxt)
 out:
 		gfx_printf("Done!\n");
 		f_close(&fp);
-
-		_update_r2p(path);
 
 		return (!sept_ctxt ? 1 : sept_used);
 	}

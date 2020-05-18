@@ -17,7 +17,9 @@
 #include <string.h>
 
 #include "sept.h"
+#include "../config/ini.h"
 #include "../gfx/di.h"
+#include "../hos/fss.h"
 #include "../hos/hos.h"
 #include "../libs/fatfs/ff.h"
 #include "../mem/heap.h"
@@ -28,6 +30,7 @@
 #include "../storage/nx_sd.h"
 #include "../storage/sdmmc.h"
 #include "../utils/btn.h"
+#include "../utils/list.h"
 #include "../utils/types.h"
 
 #include "../gfx/gfx.h"
@@ -65,42 +68,76 @@ extern void reloc_patcher(u32 payload_dst, u32 payload_src, u32 payload_size);
 int reboot_to_sept(const u8 *tsec_fw, const u32 tsec_size, const u32 kb)
 {
 	FIL fp;
+	bool fss0_sept_used = false;
 
 	// Copy warmboot reboot code and TSEC fw.
 	memcpy((u8 *)(SEPT_PK1T_ADDR - WB_RST_SIZE), (u8 *)warmboot_reboot, sizeof(warmboot_reboot));
 	memcpy((void *)SEPT_PK1T_ADDR, tsec_fw, tsec_size);
 	*(vu32 *)SEPT_TCSZ_ADDR = tsec_size;
 
-	// Copy sept-primary.
-	if (f_open(&fp, "sd:/sept/sept-primary.bin", FA_READ))
-		goto error;
+	LIST_INIT(ini_sections);
+	if (ini_parse(&ini_sections, "bootloader/hekate_ipl.ini", false))
+	{
+		bool found = false;
+		LIST_FOREACH_ENTRY(ini_sec_t, ini_sec, &ini_sections, link)
+		{
+			// Only parse non config sections.
+			if (ini_sec->type == INI_CHOICE && strcmp(ini_sec->name, "config"))
+			{
+				LIST_FOREACH_ENTRY(ini_kv_t, kv, &ini_sec->kvs, link)
+				{
+					if (!strcmp("fss0", kv->key))
+					{
+						fss0_sept_t sept_ctxt;
+						sept_ctxt.kb = kb;
+						sept_ctxt.sept_primary = (void *)SEPT_STG1_ADDR;
+						sept_ctxt.sept_secondary = (void *)SEPT_STG2_ADDR;
+						fss0_sept_used = parse_fss(NULL, kv->val, &sept_ctxt);
 
-	if (f_read(&fp, (u8 *)SEPT_STG1_ADDR, f_size(&fp), NULL))
-	{
-		f_close(&fp);
-		goto error;
+						found = true;
+						break;
+					}
+				}
+			}
+			if (found)
+				break;
+		}
 	}
-	f_close(&fp);
 
-	// Copy sept-secondary.
-	if (kb < KB_FIRMWARE_VERSION_810)
+
+	if (!fss0_sept_used)
 	{
-		if (f_open(&fp, "sd:/sept/sept-secondary_00.enc", FA_READ))
-			if (f_open(&fp, "sd:/sept/sept-secondary.enc", FA_READ)) // Try the deprecated version.
-				goto error;
-	}
-	else
-	{
-		if (f_open(&fp, "sd:/sept/sept-secondary_01.enc", FA_READ))
+		// Copy sept-primary.
+		if (f_open(&fp, "sd:/sept/sept-primary.bin", FA_READ))
 			goto error;
-	}
 
-	if (f_read(&fp, (u8 *)SEPT_STG2_ADDR, f_size(&fp), NULL))
-	{
+		if (f_read(&fp, (u8 *)SEPT_STG1_ADDR, f_size(&fp), NULL))
+		{
+			f_close(&fp);
+			goto error;
+		}
 		f_close(&fp);
-		goto error;
+
+		// Copy sept-secondary.
+		if (kb < KB_FIRMWARE_VERSION_810)
+		{
+			if (f_open(&fp, "sd:/sept/sept-secondary_00.enc", FA_READ))
+				if (f_open(&fp, "sd:/sept/sept-secondary.enc", FA_READ)) // Try the deprecated version.
+					goto error;
+		}
+		else
+		{
+			if (f_open(&fp, "sd:/sept/sept-secondary_01.enc", FA_READ))
+				goto error;
+		}
+
+		if (f_read(&fp, (u8 *)SEPT_STG2_ADDR, f_size(&fp), NULL))
+		{
+			f_close(&fp);
+			goto error;
+		}
+		f_close(&fp);
 	}
-	f_close(&fp);
 
 	// Save auto boot config to sept payload, if any.
 	boot_cfg_t *tmp_cfg = malloc(sizeof(boot_cfg_t));

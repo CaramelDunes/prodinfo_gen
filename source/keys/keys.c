@@ -304,7 +304,7 @@ get_tsec: ;
                     break;
                 }
                 memcpy(master_key[kb-1], master_key[kb], 0x10);
-                memcpy(master_key[kb], zeros, 0x10);
+                memset(master_key[kb], 0, 0x10);
             }
             if (_key_exists(temp_key)) {
                 EPRINTF("Unable to derive master key.");
@@ -527,6 +527,8 @@ pkg2_done:
             for (u32 j = 0; j < 3; j++) {
                 _generate_kek(8, fs_keys[2 + j], master_key[i], aes_kek_generation_source, NULL);
                 se_aes_crypt_block_ecb(8, 0, key_area_key[j][i], aes_key_generation_source);
+                if (j == 2)
+                    gfx_hexdump(i, key_area_key[j][i], 0x10);
             }
         }
         se_aes_key_set(8, master_key[i], 0x10);
@@ -1088,8 +1090,14 @@ static void _save_key(const char *name, const void *data, u32 len, char *outbuf)
 
 static void _save_key_family(const char *name, const void *data, u32 start_key, u32 num_keys, u32 len, char *outbuf) {
     char temp_name[0x40] = {0};
+    if (memcmp(name, "key_area_key_system", 19) == 0) {
+        gfx_hexdump(0, data, num_keys * 0x10);
+    }
     for (u32 i = 0; i < num_keys; i++) {
         sprintf(temp_name, "%s_%02x", name, i + start_key);
+        if (memcmp(name, "key_area_key_system", 19) == 0) {
+            gfx_printf("attempt save key %x\n", i);
+        }
         _save_key(temp_name, data + i * len, len, outbuf);
     }
 }
