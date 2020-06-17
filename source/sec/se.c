@@ -418,8 +418,8 @@ int se_aes_xts_crypt_sec(u32 ks1, u32 ks2, u32 enc, u64 sec, void *dst, const vo
 	u8 *tweak = (u8 *)malloc(0x10);
 	u8 *temptweak = (u8 *)malloc(0x10);
 	u32 *pdst = (u32 *)dst;
-    u32 *psrc = (u32 *)src;
-    u32 *ptweak = (u32 *)tweak;
+	u32 *psrc = (u32 *)src;
+	u32 *ptweak = (u32 *)tweak;
 
 	//Generate tweak.
 	for (int i = 0xF; i >= 0; i--)

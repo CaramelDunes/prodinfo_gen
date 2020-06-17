@@ -193,7 +193,7 @@ typedef struct {
 } remap_storage_ctx_t;
 
 typedef struct {
-    uint64_t title_id;
+    uint64_t program_id;
     uint8_t user_id[0x10];
     uint64_t save_id;
     uint8_t save_data_type;

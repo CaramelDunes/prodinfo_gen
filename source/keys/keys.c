@@ -472,7 +472,7 @@ get_tsec: ;
 
     if (!pkg1_not_100) {
         // 1.0.0 doesn't have SD keys at all and the first key isn't aligned with the rest
-        memcpy(fs_keys[2], ki->kip1->data + ki->kip1->sections[0].size_comp + 0x1ae0e, 0x10);
+        memcpy(fs_keys[FS_KEY_AREA_KEY_APPLI_SOURCE], ki->kip1->data + ki->kip1->sections[0].size_comp + 0x1ae0e, 0x10);
         hash_index = 1;
     }
 
@@ -506,15 +506,15 @@ pkg2_done:
 
     TPRINTFARGS("%kFS keys...      ", colors[(color_idx++) % 6]);
 
-    if (_key_exists(fs_keys[0]) && _key_exists(fs_keys[1]) && _key_exists(master_key[0])) {
-        _generate_kek(8, fs_keys[0], master_key[0], aes_kek_generation_source, aes_key_generation_source);
-        se_aes_crypt_block_ecb(8, 0, header_key + 0x00, fs_keys[1] + 0x00);
-        se_aes_crypt_block_ecb(8, 0, header_key + 0x10, fs_keys[1] + 0x10);
+    if (_key_exists(fs_keys[FS_HEADER_KEK_SOURCE]) && _key_exists(fs_keys[FS_HEADER_KEY_SOURCE]) && _key_exists(master_key[0])) {
+        _generate_kek(8, fs_keys[FS_HEADER_KEK_SOURCE], master_key[0], aes_kek_generation_source, aes_key_generation_source);
+        se_aes_crypt_block_ecb(8, 0, header_key + 0x00, fs_keys[FS_HEADER_KEY_SOURCE] + 0x00);
+        se_aes_crypt_block_ecb(8, 0, header_key + 0x10, fs_keys[FS_HEADER_KEY_SOURCE] + 0x10);
     }
 
-    if (_key_exists(fs_keys[5]) && _key_exists(fs_keys[6]) && _key_exists(device_key)) {
-        _generate_kek(8, fs_keys[5], device_key, aes_kek_generation_source, NULL);
-        se_aes_crypt_block_ecb(8, 0, save_mac_key, fs_keys[6]);
+    if (_key_exists(fs_keys[FS_SAVE_MAC_KEK_SOURCE]) && _key_exists(fs_keys[FS_SAVE_MAC_KEY_SOURCE]) && _key_exists(device_key)) {
+        _generate_kek(8, fs_keys[FS_SAVE_MAC_KEK_SOURCE], device_key, aes_kek_generation_source, NULL);
+        se_aes_crypt_block_ecb(8, 0, save_mac_key, fs_keys[FS_SAVE_MAC_KEY_SOURCE]);
     }
 
     if (_key_exists(master_key[MAX_KEY])) {
@@ -523,9 +523,9 @@ pkg2_done:
     for (u32 i = 0; i < MAX_KEY; i++) {
         if (!_key_exists(master_key[i]))
             continue;
-        if (_key_exists(fs_keys[2]) && _key_exists(fs_keys[3]) && _key_exists(fs_keys[4])) {
+        if (_key_exists(fs_keys[FS_KEY_AREA_KEY_APPLI_SOURCE]) && _key_exists(fs_keys[FS_KEY_AREA_KEY_OCEAN_SOURCE]) && _key_exists(fs_keys[FS_KEY_AREA_KEY_SYSTE_SOURCE])) {
             for (u32 j = 0; j < 3; j++) {
-                _generate_kek(8, fs_keys[2 + j], master_key[i], aes_kek_generation_source, NULL);
+                _generate_kek(8, fs_keys[FS_KEY_AREA_KEY_APPLI_SOURCE + j], master_key[i], aes_kek_generation_source, NULL);
                 se_aes_crypt_block_ecb(8, 0, key_area_key[j][i], aes_key_generation_source);
             }
         }
@@ -981,15 +981,15 @@ key_output: ;
     SAVE_KEY("eticket_rsa_kek_personalized", eticket_rsa_kek_personalized, 0x10);
     SAVE_KEY("eticket_rsa_kek_source", es_keys[0], 0x10);
     SAVE_KEY("eticket_rsa_kekek_source", es_keys[1], 0x10);
-    SAVE_KEY("header_kek_source", fs_keys[0], 0x10);
+    SAVE_KEY("header_kek_source", fs_keys[FS_HEADER_KEK_SOURCE], 0x10);
     SAVE_KEY("header_key", header_key, 0x20);
-    SAVE_KEY("header_key_source", fs_keys[1], 0x20);
+    SAVE_KEY("header_key_source", fs_keys[FS_HEADER_KEY_SOURCE], 0x20);
     SAVE_KEY_FAMILY("key_area_key_application", key_area_key[0], 0, MAX_KEY, 0x10);
-    SAVE_KEY("key_area_key_application_source", fs_keys[2], 0x10);
+    SAVE_KEY("key_area_key_application_source", fs_keys[FS_KEY_AREA_KEY_APPLI_SOURCE], 0x10);
     SAVE_KEY_FAMILY("key_area_key_ocean", key_area_key[1], 0, MAX_KEY, 0x10);
-    SAVE_KEY("key_area_key_ocean_source", fs_keys[3], 0x10);
+    SAVE_KEY("key_area_key_ocean_source", fs_keys[FS_KEY_AREA_KEY_OCEAN_SOURCE], 0x10);
     SAVE_KEY_FAMILY("key_area_key_system", key_area_key[2], 0, MAX_KEY, 0x10);
-    SAVE_KEY("key_area_key_system_source", fs_keys[4], 0x10);
+    SAVE_KEY("key_area_key_system_source", fs_keys[FS_KEY_AREA_KEY_SYSTE_SOURCE], 0x10);
     SAVE_KEY_FAMILY("keyblob", keyblob, 0, 6, 0x90);
     SAVE_KEY_FAMILY("keyblob_key", keyblob_key, 0, 6, 0x10);
     SAVE_KEY_FAMILY("keyblob_key_source", keyblob_key_source, 0, 6, 0x10);
@@ -1010,15 +1010,15 @@ key_output: ;
     for (u32 i = 0; i < 0x10; i++)
         temp_key[i] = aes_kek_generation_source[i] ^ aes_kek_seed_01[i];
     SAVE_KEY("rsa_private_kek_generation_source", temp_key, 0x10);
-    SAVE_KEY("save_mac_kek_source", fs_keys[5], 0x10);
+    SAVE_KEY("save_mac_kek_source", fs_keys[FS_SAVE_MAC_KEK_SOURCE], 0x10);
     SAVE_KEY("save_mac_key", save_mac_key, 0x10);
-    SAVE_KEY("save_mac_key_source", fs_keys[6], 0x10);
-    SAVE_KEY("save_mac_sd_card_kek_source", fs_keys[7], 0x10);
-    SAVE_KEY("save_mac_sd_card_key_source", fs_keys[8], 0x10);
-    SAVE_KEY("sd_card_custom_storage_key_source", fs_keys[9], 0x20);
-    SAVE_KEY("sd_card_kek_source", fs_keys[10], 0x10);
-    SAVE_KEY("sd_card_nca_key_source", fs_keys[11], 0x20);
-    SAVE_KEY("sd_card_save_key_source", fs_keys[12], 0x20);
+    SAVE_KEY("save_mac_key_source", fs_keys[FS_SAVE_MAC_KEY_SOURCE], 0x10);
+    SAVE_KEY("save_mac_sd_card_kek_source", fs_keys[FS_SAVE_MAC_SD_KEK_SOURCE], 0x10);
+    SAVE_KEY("save_mac_sd_card_key_source", fs_keys[FS_SAVE_MAC_SD_KEY_SOURCE], 0x10);
+    SAVE_KEY("sd_card_custom_storage_key_source", fs_keys[FS_SD_CUSTOM_KEY_SOURCE], 0x20);
+    SAVE_KEY("sd_card_kek_source", fs_keys[FS_SD_KEK_SOURCE], 0x10);
+    SAVE_KEY("sd_card_nca_key_source", fs_keys[FS_SD_NCA_KEY_SOURCE], 0x20);
+    SAVE_KEY("sd_card_save_key_source", fs_keys[FS_SD_SAVE_KEY_SOURCE], 0x20);
     SAVE_KEY("sd_seed", sd_seed, 0x10);
     SAVE_KEY("secure_boot_key", sbk, 0x10);
     SAVE_KEY("ssl_rsa_kek", ssl_rsa_kek, 0x10);
