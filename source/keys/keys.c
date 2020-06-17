@@ -234,7 +234,7 @@ void dump_keys() {
             if (!reboot_to_sept((u8 *)tsec_ctxt.fw, tsec_ctxt.size, pkg1_id->kb))
                 goto out_wait;
         } else {
-            se_aes_key_read(12, master_key[KB_FIRMWARE_VERSION_MAX], 0x10);
+            se_aes_key_read(se_key_acc_ctrl_get(12) == 0x6A ? 13 : 12, master_key[KB_FIRMWARE_VERSION_MAX], 0x10);
         }
     }
 
