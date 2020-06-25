@@ -51,9 +51,9 @@
 
 extern hekate_config h_cfg;
 
-extern bool clear_sector_cache;
-extern bool lock_sector_cache;
-extern u32 secindex;
+extern bool clear_cluster_cache;
+extern bool lock_cluster_cache;
+extern u32 cluster_cache_index;
 
 u32 _key_count = 0, _titlekey_count = 0;
 u32 color_idx = 0;
@@ -593,6 +593,7 @@ pkg2_done:
     }
 
     path[25] = '/';
+    lock_cluster_cache = true;
     while (!f_readdir(&dir, &fno) && fno.fname[0] && titles_found < title_limit) {
         minerva_periodic_training();
         memcpy(path + 26, fno.fname, 36);
@@ -614,7 +615,6 @@ pkg2_done:
             }
             hash_index = 0;
             // decrypt only what is needed to locate needed keys
-            lock_sector_cache = true;
             temp_file = (u8*)_nca_process(5, 4, &fp, pkg1_id->key_info.es_offset, 0xc0, key_area_key);
             for (u32 i = 0; i <= 0xb0; ) {
                 se_calc_sha256(temp_hash, temp_file + i, 0x10);
@@ -631,9 +631,7 @@ pkg2_done:
             free(temp_file);
             temp_file = NULL;
             titles_found++;
-            lock_sector_cache = false;
         } else if (_read_le_u32(dec_header, 0x210) == 0x24 && dec_header[0x205] == 0) {
-            lock_sector_cache = true;
             temp_file = (u8*)_nca_process(5, 4, &fp, pkg1_id->key_info.ssl_offset, 0x70, key_area_key);
             for (u32 i = 0; i <= 0x60; i++) {
                 se_calc_sha256(temp_hash, temp_file + i, 0x10);
@@ -653,12 +651,12 @@ pkg2_done:
             free(temp_file);
             temp_file = NULL;
             titles_found++;
-            lock_sector_cache = false;
         }
         f_close(&fp);
     }
     f_closedir(&dir);
     free(dec_header);
+    lock_cluster_cache = false;
 
     // derive eticket_rsa_kek and ssl_rsa_kek
     if (_key_exists(es_keys[0]) && _key_exists(es_keys[1]) && _key_exists(master_key[0])) {
@@ -799,7 +797,7 @@ get_titlekeys:
     save_ctx->file = &fp;
     save_ctx->tool_ctx.action = 0;
     memcpy(save_ctx->save_mac_key, save_mac_key, 0x10);
-    clear_sector_cache = true;
+    clear_cluster_cache = true;
     save_process_success = save_process(save_ctx);
     if (!save_process_success) {
         EPRINTF("Failed to process e1 save.");
@@ -876,7 +874,7 @@ get_titlekeys:
     save_ctx->file = &fp;
     save_ctx->tool_ctx.action = 0;
     memcpy(save_ctx->save_mac_key, save_mac_key, 0x10);
-    clear_sector_cache = true;
+    clear_cluster_cache = true;
     save_process_success = save_process(save_ctx);
     if (!save_process_success) {
         EPRINTF("Failed to process e2 save.");
@@ -958,7 +956,7 @@ dismount:;
         free(save_ctx);
     }
     f_mount(NULL, "emmc:", 1);
-    clear_sector_cache = true;
+    clear_cluster_cache = true;
     nx_emmc_gpt_free(&gpt);
 
 key_output: ;
