@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "../libs/fatfs/ff.h"
+#include <libs/fatfs/ff.h>
 
 #define SAVE_HEADER_SIZE 0x4000
 #define SAVE_FAT_ENTRY_SIZE 8
@@ -443,21 +443,62 @@ static inline uint32_t allocation_table_block_to_entry_index(uint32_t block_inde
     return block_index + 1;
 }
 
-static inline int allocation_table_is_list_end(allocation_table_entry_t *entry) {
-    return (entry->next & 0x7FFFFFFF) == 0;
+static inline int allocation_table_get_prev(allocation_table_entry_t *entry) {
+    return entry->prev & 0x7FFFFFFF;
+}
+
+static inline int allocation_table_get_next(allocation_table_entry_t *entry) {
+    return entry->next & 0x7FFFFFFF;
 }
 
 static inline int allocation_table_is_list_start(allocation_table_entry_t *entry) {
     return entry->prev == 0x80000000;
 }
 
-
-static inline int allocation_table_get_next(allocation_table_entry_t *entry) {
-    return entry->next & 0x7FFFFFFF;
+static inline int allocation_table_is_list_end(allocation_table_entry_t *entry) {
+    return (entry->next & 0x7FFFFFFF) == 0;
 }
 
-static inline int allocation_table_get_prev(allocation_table_entry_t *entry) {
-    return entry->prev & 0x7FFFFFFF;
+static inline bool allocation_table_is_multi_block_segment(allocation_table_entry_t *entry) {
+    return entry->next & 0x80000000;
+}
+
+static inline void allocation_table_make_multi_block_segment(allocation_table_entry_t *entry) {
+    entry->next |= 0x80000000;
+}
+
+static inline void allocation_table_make_single_block_segment(allocation_table_entry_t *entry) {
+    entry->next &= 0x7FFFFFFF;
+}
+
+static inline bool allocation_table_is_single_block_segment(allocation_table_entry_t *entry) {
+    return (entry->next & 0x80000000) == 0;
+}
+
+static inline void allocation_table_make_list_start(allocation_table_entry_t *entry) {
+    entry->prev = 0x80000000;
+}
+
+static inline bool allocation_table_is_range_entry(allocation_table_entry_t *entry) {
+    return (entry->prev & 0x80000000) != 0 && entry->prev != 0x80000000;
+}
+
+static inline void allocation_table_make_range_entry(allocation_table_entry_t *entry) {
+    entry->prev |= 0x80000000;
+}
+
+static inline void allocation_table_set_next(allocation_table_entry_t *entry, int val) {
+    entry->next = (entry->next & 0x80000000) | val;
+}
+
+static inline void allocation_table_set_prev(allocation_table_entry_t *entry, int val) {
+    entry->prev = val;
+}
+
+static inline void allocation_table_set_range(allocation_table_entry_t *entry, int start_index, int end_index) {
+    entry->next = end_index;
+    entry->prev = start_index;
+    allocation_table_make_range_entry(entry);
 }
 
 static inline allocation_table_entry_t *save_allocation_table_read_entry(allocation_table_ctx_t *ctx, uint32_t entry_index) {

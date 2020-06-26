@@ -1,7 +1,8 @@
 /*
  * Copyright (c) 2018 naehrwert
  *
- * Copyright (c) 2018-2019 CTCaer
+ * Copyright (c) 2018-2020 CTCaer
+ * Copyright (c) 2019-2020 shchmue
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -18,27 +19,29 @@
 
 #include <string.h>
 
-#include "config/config.h"
-#include "config/ini.h"
-#include "gfx/di.h"
-#include "gfx/gfx.h"
+#include "config.h"
+#include <gfx/di.h>
+#include <gfx_utils.h>
 #include "gfx/tui.h"
 #include "hos/pkg1.h"
-#include "libs/fatfs/ff.h"
-#include "mem/heap.h"
-#include "mem/minerva.h"
-#include "power/max77620.h"
-#include "rtc/max77620-rtc.h"
-#include "soc/bpmp.h"
+#include <libs/fatfs/ff.h>
+#include <mem/heap.h>
+#include <mem/minerva.h>
+#include <power/bq24193.h>
+#include <power/max17050.h>
+#include <power/max77620.h>
+#include <rtc/max77620-rtc.h>
+#include <soc/bpmp.h>
 #include "soc/hw_init.h"
 #include "storage/emummc.h"
 #include "storage/nx_emmc.h"
-#include "storage/nx_sd.h"
-#include "storage/sdmmc.h"
-#include "utils/btn.h"
-#include "utils/dirlist.h"
-#include "utils/sprintf.h"
-#include "utils/util.h"
+#include <storage/nx_sd.h>
+#include <storage/sdmmc.h>
+#include <utils/btn.h>
+#include <utils/dirlist.h>
+#include <utils/ini.h>
+#include <utils/sprintf.h>
+#include <utils/util.h>
 
 #include "keys/keys.h"
 
@@ -162,7 +165,7 @@ void launch_tools()
 
 		memcpy(dir, "sd:/bootloader/payloads", 24);
 
-		filelist = dirlist(dir, NULL, false);
+		filelist = dirlist(dir, NULL, false, false);
 
 		u32 i = 0;
 		u32 i_off = 2;
@@ -335,6 +338,11 @@ void ipl_main()
 	// Tegra/Horizon configuration goes to 0x80000000+, package2 goes to 0xA9800000, we place our heap in between.
 	heap_init(IPL_HEAP_START);
 
+#ifdef DEBUG_UART_PORT
+	uart_send(DEBUG_UART_PORT, (u8 *)"hekate: Hello!\r\n", 16);
+	uart_wait_idle(DEBUG_UART_PORT, UART_TX_IDLE);
+#endif
+
 	// Set bootloader's default configuration.
 	set_default_configuration();
 
@@ -345,7 +353,7 @@ void ipl_main()
 
 	display_init();
 
-	u32 *fb = display_init_framebuffer();
+	u32 *fb = display_init_framebuffer_pitch();
 	gfx_init_ctxt(fb, 720, 1280, 720);
 
 	gfx_con_init();
@@ -355,7 +363,9 @@ void ipl_main()
 	// Overclock BPMP.
 	bpmp_clk_rate_set(BPMP_CLK_DEFAULT_BOOST);
 
-	h_cfg.emummc_force_disable = emummc_load_cfg();
+	emummc_load_cfg();
+	// Ignore whether emummc is enabled.
+	h_cfg.emummc_force_disable = emu_cfg.sector == 0 && !emu_cfg.path;
 
 	if (b_cfg.boot_cfg & BOOT_CFG_SEPT_RUN)
 	{
@@ -364,6 +374,7 @@ void ipl_main()
 		dump_keys();
 	}
 
+	// Grey out emummc option if not present.
 	if (h_cfg.emummc_force_disable)
 	{
 		ment_top[1].type = MENT_CAPTION;
@@ -371,6 +382,7 @@ void ipl_main()
 		ment_top[1].handler = NULL;
 	}
 
+	// Update key generations listed in menu.
 	_get_key_generations((char *)ment_top[0].caption, (char *)ment_top[1].caption);
 
 	while (true)

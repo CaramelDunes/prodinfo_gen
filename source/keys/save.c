@@ -2,11 +2,11 @@
 #include <string.h>
 #include "save.h"
 
-#include "../gfx/gfx.h"
-#include "../mem/heap.h"
-#include "../sec/se.h"
-#include "../utils/types.h"
-#include "../utils/util.h"
+#include <gfx_utils.h>
+#include <mem/heap.h>
+#include <sec/se.h>
+#include <utils/types.h>
+#include <utils/util.h>
 
 #define REMAP_ENTRY_LENGTH 0x20
 
@@ -294,10 +294,11 @@ void save_ivfc_storage_read(integrity_verification_storage_ctx_t *ctx, void *buf
 uint32_t save_allocation_table_read_entry_with_length(allocation_table_ctx_t *ctx, allocation_table_entry_t *entry) {
     uint32_t length = 1;
     uint32_t entry_index = allocation_table_block_to_entry_index(entry->next);
+    uint32_t offset = entry_index * SAVE_FAT_ENTRY_SIZE;
 
-    allocation_table_entry_t *entries = (allocation_table_entry_t *)((uint8_t *)(ctx->base_storage) + entry_index * SAVE_FAT_ENTRY_SIZE);
-    if ((entries[0].next & 0x80000000) == 0) {
-        if (entries[0].prev & 0x80000000 && entries[0].prev != 0x80000000) {
+    allocation_table_entry_t *entries = (allocation_table_entry_t *)((uint8_t *)(ctx->base_storage) + offset);
+    if (allocation_table_is_single_block_segment(&entries[0])) {
+        if (allocation_table_is_range_entry(&entries[0])) {
             EPRINTF("Invalid range entry in allocation table!");
             return 0;
         }
@@ -650,8 +651,8 @@ bool save_process(save_ctx_t *ctx) {
     }
 
     unsigned char cmac[0x10] = {};
-    se_aes_key_set(3, ctx->save_mac_key, 0x10);
-    se_aes_cmac(3, cmac, 0x10, &ctx->header.layout, sizeof(ctx->header.layout));
+    se_aes_key_set(10, ctx->save_mac_key, 0x10);
+    se_aes_cmac(10, cmac, 0x10, &ctx->header.layout, sizeof(ctx->header.layout));
     if (memcmp(cmac, &ctx->header.cmac, 0x10) == 0) {
         ctx->header_cmac_validity = VALIDITY_VALID;
     } else {

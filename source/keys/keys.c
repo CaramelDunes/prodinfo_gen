@@ -16,33 +16,34 @@
 
 #include "keys.h"
 
-#include "../config/config.h"
-#include "../gfx/di.h"
-#include "../gfx/gfx.h"
+#include "../config.h"
+#include <gfx/di.h>
+#include <gfx_utils.h>
 #include "../gfx/tui.h"
 #include "../hos/hos.h"
 #include "../hos/pkg1.h"
 #include "../hos/pkg2.h"
 #include "../hos/sept.h"
-#include "../libs/fatfs/ff.h"
-#include "../mem/heap.h"
-#include "../mem/mc.h"
-#include "../mem/minerva.h"
-#include "../mem/sdram.h"
-#include "../sec/se.h"
-#include "../sec/se_t210.h"
-#include "../sec/tsec.h"
-#include "../soc/fuse.h"
-#include "../soc/smmu.h"
-#include "../soc/t210.h"
+#include <libs/fatfs/ff.h>
+#include <mem/heap.h>
+#include <mem/mc.h>
+#include <mem/minerva.h>
+#include <mem/sdram.h>
+#include <sec/se.h>
+#include <sec/se_t210.h>
+#include <sec/tsec.h>
+#include <soc/fuse.h>
+#include <mem/smmu.h>
+#include <soc/t210.h>
 #include "../storage/emummc.h"
 #include "../storage/nx_emmc.h"
-#include "../storage/nx_sd.h"
-#include "../storage/sdmmc.h"
-#include "../utils/btn.h"
-#include "../utils/list.h"
-#include "../utils/sprintf.h"
-#include "../utils/util.h"
+#include "../storage/nx_emmc_bis.h"
+#include <storage/nx_sd.h>
+#include <storage/sdmmc.h>
+#include <utils/btn.h>
+#include <utils/list.h>
+#include <utils/sprintf.h>
+#include <utils/util.h>
 
 #include "key_sources.inl"
 #include "save.h"
@@ -51,15 +52,9 @@
 
 extern hekate_config h_cfg;
 
-extern bool clear_cluster_cache;
-extern bool lock_cluster_cache;
-extern u32 cluster_cache_index;
-
-u32 _key_count = 0, _titlekey_count = 0;
+static u32 _key_count = 0, _titlekey_count = 0;
+static u32 start_time, end_time;
 u32 color_idx = 0;
-sdmmc_storage_t storage;
-emmc_part_t *system_part;
-u32 start_time, end_time;
 
 #define TPRINTF(text) \
     end_time = get_tmr_us(); \
@@ -90,7 +85,7 @@ static void  _save_key_family(const char *name, const void *data, u32 start_key,
 static void  _generate_kek(u32 ks, const void *key_source, void *master_key, const void *kek_seed, const void *key_seed);
 static void  _get_device_key(u32 ks, void *out_device_key, u32 revision, const void *device_key, const void *master_key);
 // nca functions
-static void *_nca_process(u32 hk_ks1, u32 hk_ks2, FIL *fp, u32 key_offset, u32 len, const u8 key_area_key[3][KB_FIRMWARE_VERSION_MAX+1][0x10]);
+static void *_nca_process(u32 tweak_ks, u32 crypt_ks, FIL *fp, u32 key_offset, u32 len, const u8 key_area_key[3][KB_FIRMWARE_VERSION_MAX+1][0x10]);
 static u32   _nca_fread_ctr(u32 ks, FIL *fp, void *buffer, u32 offset, u32 len, u8 *ctr);
 static void  _update_ctr(u8 *ctr, u32 ofs);
 // titlekey functions
@@ -147,7 +142,7 @@ void dump_keys() {
     tsec_ctxt_t tsec_ctxt;
     sdmmc_t sdmmc;
 
-    if (emummc_storage_init_mmc(&storage, &sdmmc)) {
+    if (emummc_storage_init_mmc(&emmc_storage, &sdmmc)) {
         EPRINTF("Unable to init MMC.");
         goto out_wait;
     }
@@ -155,8 +150,8 @@ void dump_keys() {
 
     // Read package1.
     u8 *pkg1 = (u8 *)malloc(0x40000);
-    emummc_storage_set_mmc_partition(&storage, EMMC_BOOT0);
-    emummc_storage_read(&storage, 0x100000 / NX_EMMC_BLOCKSIZE, 0x40000 / NX_EMMC_BLOCKSIZE, pkg1);
+    emummc_storage_set_mmc_partition(&emmc_storage, EMMC_BOOT0);
+    emummc_storage_read(&emmc_storage, 0x100000 / NX_EMMC_BLOCKSIZE, 0x40000 / NX_EMMC_BLOCKSIZE, pkg1);
     const pkg1_id_t *pkg1_id = pkg1_identify(pkg1);
     if (!pkg1_id) {
         EPRINTF("Unknown pkg1 version.\n Make sure you have the latest Lockpick_RCM.\n If a new firmware version just came out,\n Lockpick_RCM must be updated.\n Check Github for new release.");
@@ -230,7 +225,7 @@ void dump_keys() {
             gfx_printf("%kRenamed /sept/payload.bin", colors[(color_idx++) % 6]);
             gfx_printf("\n     to /sept/payload.bak\n\n");
             gfx_printf("%kCopied self to /sept/payload.bin\n", colors[(color_idx++) % 6]);
-            sdmmc_storage_end(&storage);
+            sdmmc_storage_end(&emmc_storage);
             if (!reboot_to_sept((u8 *)tsec_ctxt.fw, tsec_ctxt.size, pkg1_id->kb))
                 goto out_wait;
         } else {
@@ -331,9 +326,9 @@ get_tsec: ;
         }
 
         // verify keyblob is not corrupt
-        emummc_storage_read(&storage, 0x180000 / NX_EMMC_BLOCKSIZE + i, 1, keyblob_block);
-        se_aes_key_set(3, keyblob_mac_key[i], 0x10);
-        se_aes_cmac(3, keyblob_mac, 0x10, keyblob_block + 0x10, 0xa0);
+        emummc_storage_read(&emmc_storage, 0x180000 / NX_EMMC_BLOCKSIZE + i, 1, keyblob_block);
+        se_aes_key_set(10, keyblob_mac_key[i], 0x10);
+        se_aes_cmac(10, keyblob_mac, 0x10, keyblob_block + 0x10, 0xa0);
         if (memcmp(keyblob_block, keyblob_mac, 0x10) != 0) {
             EPRINTFARGS("Keyblob %x corrupt.", i);
             gfx_hexdump(i, keyblob_block, 0x10);
@@ -342,8 +337,8 @@ get_tsec: ;
         }
 
         // decrypt keyblobs
-        se_aes_key_set(2, keyblob_key[i], 0x10);
-        se_aes_crypt_ctr(2, keyblob[i], 0x90, keyblob_block + 0x20, 0x90, keyblob_block + 0x10);
+        se_aes_key_set(6, keyblob_key[i], 0x10);
+        se_aes_crypt_ctr(6, keyblob[i], 0x90, keyblob_block + 0x20, 0x90, keyblob_block + 0x10);
 
         memcpy(package1_key[i], keyblob[i] + 0x80, 0x10);
         memcpy(master_kek[i], keyblob[i], 0x10);
@@ -360,11 +355,9 @@ get_tsec: ;
     minerva_periodic_training();
     u32 key_generation = 0;
     if (pkg1_id->kb >= KB_FIRMWARE_VERSION_500) {
-        if ((fuse_read_odm(4) & 0x800) && fuse_read_odm(0) == 0x8E61ECAE && fuse_read_odm(1) == 0xF2BA3BB2) {
-            key_generation = fuse_read_odm(2) & 0x1F;
-            if (key_generation)
-                key_generation--;
-        }
+        key_generation = fuse_read_odm_keygen_rev();
+        if (key_generation)
+            key_generation--;
     }
     if (_key_exists(device_key)) {
         if (key_generation) {
@@ -388,10 +381,10 @@ get_tsec: ;
     u8 *pkg2 = NULL;
     pkg2_kip1_info_t *ki = NULL;
 
-    emummc_storage_set_mmc_partition(&storage, EMMC_GPP);
+    emummc_storage_set_mmc_partition(&emmc_storage, EMMC_GPP);
     // Parse eMMC GPT.
     LIST_INIT(gpt);
-    nx_emmc_gpt_parse(&gpt, &storage);
+    nx_emmc_gpt_parse(&gpt, &emmc_storage);
 
     // Find package2 partition.
     emmc_part_t *pkg2_part = nx_emmc_part_find(&gpt, "BCPKG2-1-Normal-Main");
@@ -402,7 +395,7 @@ get_tsec: ;
 
     // Read in package2 header and get package2 real size.
     u8 *tmp = (u8 *)malloc(NX_EMMC_BLOCKSIZE);
-    nx_emmc_part_read(&storage, pkg2_part, 0x4000 / NX_EMMC_BLOCKSIZE, 1, tmp);
+    nx_emmc_part_read(&emmc_storage, pkg2_part, 0x4000 / NX_EMMC_BLOCKSIZE, 1, tmp);
     u32 *hdr_pkg2_raw = (u32 *)(tmp + 0x100);
     u32 pkg2_size = hdr_pkg2_raw[0] ^ hdr_pkg2_raw[2] ^ hdr_pkg2_raw[3];
     free(tmp);
@@ -414,7 +407,7 @@ get_tsec: ;
     // Read in package2.
     u32 pkg2_size_aligned = ALIGN(pkg2_size, NX_EMMC_BLOCKSIZE);
     pkg2 = malloc(pkg2_size_aligned);
-    nx_emmc_part_read(&storage, pkg2_part, 0x4000 / NX_EMMC_BLOCKSIZE, pkg2_size_aligned / NX_EMMC_BLOCKSIZE, pkg2);
+    nx_emmc_part_read(&emmc_storage, pkg2_part, 0x4000 / NX_EMMC_BLOCKSIZE, pkg2_size_aligned / NX_EMMC_BLOCKSIZE, pkg2);
 
     // Decrypt package2 and parse KIP1 blobs in INI1 section. Try all available key generations in case of pkg1/pkg2 mismatch.
     minerva_periodic_training();
@@ -540,18 +533,30 @@ pkg2_done:
         goto key_output;
     }
 
-    se_aes_key_set(4, header_key + 0x00, 0x10);
-    se_aes_key_set(5, header_key + 0x10, 0x10);
-    se_aes_key_set(8, bis_key[2] + 0x00, 0x10);
-    se_aes_key_set(9, bis_key[2] + 0x10, 0x10);
+    // Set BIS keys.
+    // PRODINFO/PRODINFOF
+    se_aes_key_set(0, bis_key[0] + 0x00, 0x10);
+    se_aes_key_set(1, bis_key[0] + 0x10, 0x10);
+    // SAFE
+    se_aes_key_set(2, bis_key[1] + 0x00, 0x10);
+    se_aes_key_set(3, bis_key[1] + 0x10, 0x10);
+    // SYSTEM/USER
+    se_aes_key_set(4, bis_key[2] + 0x00, 0x10);
+    se_aes_key_set(5, bis_key[2] + 0x10, 0x10);
 
-    system_part = nx_emmc_part_find(&gpt, "SYSTEM");
+    // Set header key for NCA decryption.
+    se_aes_key_set(8, header_key + 0x00, 0x10);
+    se_aes_key_set(9, header_key + 0x10, 0x10);
+
+    emmc_part_t *system_part = nx_emmc_part_find(&gpt, "SYSTEM");
     if (!system_part) {
         EPRINTF("Unable to locate System partition.");
         goto key_output;
     }
-    __attribute__ ((aligned (16))) FATFS emmc_fs;
-    if (f_mount(&emmc_fs, "emmc:", 1)) {
+
+    nx_emmc_bis_init(system_part);
+
+    if (f_mount(&emmc_fs, "bis:", 1)) {
         EPRINTF("Unable to mount system partition.");
         goto key_output;
     }
@@ -564,10 +569,8 @@ pkg2_done:
 
     // sysmodule NCAs only ever have one section (exefs) so 0x600 is sufficient
     u8 *dec_header = (u8*)malloc(0x600);
-    char path[100] = "emmc:/Contents/registered";
-    u32 titles_found = 0, title_limit = 2, read_bytes = 0;
-    if (!pkg1_not_100)
-        title_limit = 1;
+    char path[100] = "bis:/Contents/registered";
+    u32 titles_found = 0, read_bytes = 0, title_limit = pkg1_not_100 ? 2 : 1;
     u8 *temp_file = NULL;
 
     if (f_opendir(&dir, path)) {
@@ -592,20 +595,20 @@ pkg2_done:
         goto dismount;
     }
 
-    path[25] = '/';
-    lock_cluster_cache = true;
+    path[24] = '/';
+    nx_emmc_bis_cache_lock(true);
     while (!f_readdir(&dir, &fno) && fno.fname[0] && titles_found < title_limit) {
         minerva_periodic_training();
-        memcpy(path + 26, fno.fname, 36);
-        path[62] = 0;
+        memcpy(path + 25, fno.fname, 36);
+        path[61] = 0;
         if (fno.fattrib & AM_DIR)
-            memcpy(path + 62, "/00", 4);
+            memcpy(path + 61, "/00", 4);
         if (f_open(&fp, path, FA_READ | FA_OPEN_EXISTING)) continue;
-        if (f_lseek(&fp, 0x200) || f_read(&fp, dec_header, 32, &read_bytes) || read_bytes != 32) {
+        if (f_lseek(&fp, 0x200) || f_read(&fp, dec_header, 0x20, &read_bytes) || read_bytes != 0x20) {
             f_close(&fp);
             continue;
         }
-        se_aes_xts_crypt(5, 4, 0, 1, dec_header + 0x200, dec_header, 32, 1);
+        se_aes_xts_crypt_sec(9, 8, 0, 1, dec_header + 0x200, dec_header, 0x20);
         // es doesn't contain es key sources on 1.0.0
         if (pkg1_not_100 && _read_le_u32(dec_header, 0x210) == 0x33 && dec_header[0x205] == 0) {
             u8 hash_order[3] = {0, 1, 2};
@@ -615,7 +618,7 @@ pkg2_done:
             }
             hash_index = 0;
             // decrypt only what is needed to locate needed keys
-            temp_file = (u8*)_nca_process(5, 4, &fp, pkg1_id->key_info.es_offset, 0xc0, key_area_key);
+            temp_file = (u8*)_nca_process(9, 8, &fp, pkg1_id->key_info.es_offset, 0xc0, key_area_key);
             for (u32 i = 0; i <= 0xb0; ) {
                 se_calc_sha256(temp_hash, temp_file + i, 0x10);
                 if (!memcmp(temp_hash, es_hashes_sha256[hash_order[hash_index]], 0x10)) {
@@ -632,7 +635,7 @@ pkg2_done:
             temp_file = NULL;
             titles_found++;
         } else if (_read_le_u32(dec_header, 0x210) == 0x24 && dec_header[0x205] == 0) {
-            temp_file = (u8*)_nca_process(5, 4, &fp, pkg1_id->key_info.ssl_offset, 0x70, key_area_key);
+            temp_file = (u8*)_nca_process(9, 8, &fp, pkg1_id->key_info.ssl_offset, 0x70, key_area_key);
             for (u32 i = 0; i <= 0x60; i++) {
                 se_calc_sha256(temp_hash, temp_file + i, 0x10);
                 if (!memcmp(temp_hash, ssl_hashes_sha256[1], 0x10)) {
@@ -656,7 +659,7 @@ pkg2_done:
     }
     f_closedir(&dir);
     free(dec_header);
-    lock_cluster_cache = false;
+    nx_emmc_bis_cache_lock(false);
 
     // derive eticket_rsa_kek and ssl_rsa_kek
     if (_key_exists(es_keys[0]) && _key_exists(es_keys[1]) && _key_exists(master_key[0])) {
@@ -694,7 +697,7 @@ pkg2_done:
     f_close(&fp);
 
     // this file is so small that parsing the savedata properly would take longer
-    if (f_open(&fp, "emmc:/save/8000000000000043", FA_READ | FA_OPEN_EXISTING)) {
+    if (f_open(&fp, "bis:/save/8000000000000043", FA_READ | FA_OPEN_EXISTING)) {
         EPRINTF("Unable to open ns_appman save.\nSkipping SD seed.");
         goto get_titlekeys;
     }
@@ -724,20 +727,14 @@ get_titlekeys:
         0xE3, 0xB0, 0xC4, 0x42, 0x98, 0xFC, 0x1C, 0x14, 0x9A, 0xFB, 0xF4, 0xC8, 0x99, 0x6F, 0xB9, 0x24,
         0x27, 0xAE, 0x41, 0xE4, 0x64, 0x9B, 0x93, 0x4C, 0xA4, 0x95, 0x99, 0x1B, 0x78, 0x52, 0xB8, 0x55};
 
-    se_aes_key_set(8, bis_key[0] + 0x00, 0x10);
-    se_aes_key_set(9, bis_key[0] + 0x10, 0x10);
-
     u32 buf_size = 0x40000;
     u8 *buffer = (u8 *)MIXD_BUF_ALIGNED;
 
     u8 keypair[0x230] = {0};
 
-    emummc_storage_read(&storage, 0x4400 / NX_EMMC_BLOCKSIZE, 0x4000 / NX_EMMC_BLOCKSIZE, buffer);
+    emummc_storage_read(&emmc_storage, 0x4400 / NX_EMMC_BLOCKSIZE, 0x4000 / NX_EMMC_BLOCKSIZE, buffer);
 
-    se_aes_xts_crypt(9, 8, 0, 0, buffer, buffer, 0x4000, 1);
-
-    se_aes_key_set(8, bis_key[2] + 0x00, 0x10);
-    se_aes_key_set(9, bis_key[2] + 0x10, 0x10);
+    se_aes_xts_crypt(1, 0, 0, 0, buffer, buffer, 0x4000, 1);
 
     if (_read_le_u32(buffer, 0) != 0x304C4143) {
         EPRINTF("CAL0 magic not found. Check BIS key 0.");
@@ -762,8 +759,8 @@ get_titlekeys:
         memcpy(temp_key, eticket_rsa_kek, 0x10);
     }
 
-    se_aes_key_set(2, temp_key, 0x10);
-    se_aes_crypt_ctr(2, keypair, 0x230, buffer + 0x38a0, 0x230, buffer + 0x3890);
+    se_aes_key_set(6, temp_key, 0x10);
+    se_aes_crypt_ctr(6, keypair, 0x230, buffer + 0x38a0, 0x230, buffer + 0x3890);
 
     u8 *D = keypair, *N = keypair + 0x100, *E = keypair + 0x200;
 
@@ -787,7 +784,7 @@ get_titlekeys:
     titlekeys = (u8 *)(MIXD_BUF_ALIGNED + 0x80000);
     save_ctx = calloc(1, sizeof(save_ctx_t));
     u8 M[0x100];
-    if (f_open(&fp, "emmc:/save/80000000000000E1", FA_READ | FA_OPEN_EXISTING)) {
+    if (f_open(&fp, "bis:/save/80000000000000E1", FA_READ | FA_OPEN_EXISTING)) {
         EPRINTF("Unable to open e1 save. Skipping.");
         goto dismount;
     }
@@ -797,7 +794,8 @@ get_titlekeys:
     save_ctx->file = &fp;
     save_ctx->tool_ctx.action = 0;
     memcpy(save_ctx->save_mac_key, save_mac_key, 0x10);
-    clear_cluster_cache = true;
+
+    nx_emmc_bis_cluster_cache_init();
     save_process_success = save_process(save_ctx);
     if (!save_process_success) {
         EPRINTF("Failed to process e1 save.");
@@ -866,7 +864,7 @@ get_titlekeys:
     gfx_printf("\n%kPersonalized... ", colors[color_idx % 6]);
 
     u32 common_titlekey_count = _titlekey_count;
-    if (f_open(&fp, "emmc:/save/80000000000000E2", FA_READ | FA_OPEN_EXISTING)) {
+    if (f_open(&fp, "bis:/save/80000000000000E2", FA_READ | FA_OPEN_EXISTING)) {
         EPRINTF("Unable to open e2 save. Skipping.");
         goto dismount;
     }
@@ -874,7 +872,8 @@ get_titlekeys:
     save_ctx->file = &fp;
     save_ctx->tool_ctx.action = 0;
     memcpy(save_ctx->save_mac_key, save_mac_key, 0x10);
-    clear_cluster_cache = true;
+
+    nx_emmc_bis_cluster_cache_init();
     save_process_success = save_process(save_ctx);
     if (!save_process_success) {
         EPRINTF("Failed to process e2 save.");
@@ -949,14 +948,13 @@ get_titlekeys:
     gfx_printf("\n%k  Found %d titlekeys.\n", colors[(color_idx++) % 6], _titlekey_count);
 
 dismount:;
-    if (save_process_success) {
+    if (save_process_success)
         save_free_contexts(save_ctx);
-    }
-    if (save_ctx) {
+
+    if (save_ctx)
         free(save_ctx);
-    }
-    f_mount(NULL, "emmc:", 1);
-    clear_cluster_cache = true;
+
+    f_mount(NULL, "bis:", 1);
     nx_emmc_gpt_free(&gpt);
 
 key_output: ;
@@ -965,7 +963,7 @@ key_output: ;
         EPRINTF("Unable to mount SD.");
         goto free_buffers;
     }
-    u32 text_buffer_size = _titlekey_count * 68 < 0x4000 ? 0x4000 : _titlekey_count * 68 + 1;
+    u32 text_buffer_size = MAX(_titlekey_count * 68 + 1, 0x4000);
     text_buffer = (char *)calloc(1, text_buffer_size);
 
     SAVE_KEY("aes_kek_generation_source", aes_kek_generation_source, 0x10);
@@ -1067,8 +1065,10 @@ free_buffers:
     free(text_buffer);
 
 out_wait:
-    h_cfg.emummc_force_disable = emummc_load_cfg();
-    emummc_storage_end(&storage);
+    emummc_load_cfg();
+    // Ignore whether emummc is enabled.
+    h_cfg.emummc_force_disable = emu_cfg.sector == 0 && !emu_cfg.path;
+    emummc_storage_end(&emmc_storage);
     gfx_printf("\n%kPress any key to return to the main menu.", colors[(color_idx) % 6], colors[(color_idx + 1) % 6], colors[(color_idx + 2) % 6]);
     btn_wait();
 }
@@ -1116,7 +1116,7 @@ static void _get_device_key(u32 ks, void *out_device_key, u32 revision, const vo
     se_aes_crypt_ecb(ks, 0, out_device_key, 0x10, temp_key, 0x10);
 }
 
-static void *_nca_process(u32 hk_ks1, u32 hk_ks2, FIL *fp, u32 key_offset, u32 len, const u8 key_area_key[3][KB_FIRMWARE_VERSION_MAX+1][0x10]) {
+static void *_nca_process(u32 tweak_ks, u32 crypt_ks, FIL *fp, u32 key_offset, u32 len, const u8 key_area_key[3][KB_FIRMWARE_VERSION_MAX+1][0x10]) {
     u32 read_bytes = 0, crypt_offset, read_size, num_files, string_table_size, rodata_offset;
 
     u8 *temp_file = (u8*)malloc(0x400),
@@ -1125,29 +1125,29 @@ static void *_nca_process(u32 hk_ks1, u32 hk_ks2, FIL *fp, u32 key_offset, u32 l
         free(temp_file);
         return NULL;
     }
-    se_aes_xts_crypt(hk_ks1, hk_ks2, 0, 1, temp_file, temp_file, 0x200, 2);
+    se_aes_xts_crypt(tweak_ks, crypt_ks, 0, 1, temp_file, temp_file, 0x200, 2);
     // both 1.x and 2.x use master_key_00
     temp_file[0x20] -= temp_file[0x20] ? 1 : 0;
     // decrypt key area and load decrypted key area key
     se_aes_key_set(7, key_area_key[temp_file[7]][temp_file[0x20]], 0x10);
     se_aes_crypt_block_ecb(7, 0, temp_file + 0x120, temp_file + 0x120);
-    se_aes_key_set(2, temp_file + 0x120, 0x10);
+    se_aes_key_set(6, temp_file + 0x120, 0x10);
     for (u32 i = 0; i < 8; i++)
         ctr[i] = temp_file[0x347 - i];
     crypt_offset = _read_le_u32(temp_file, 0x40) * 0x200 + _read_le_u32(temp_file, 0x240);
     read_size = 0x10;
-    _nca_fread_ctr(2, fp, temp_file, crypt_offset, read_size, ctr);
+    _nca_fread_ctr(6, fp, temp_file, crypt_offset, read_size, ctr);
     num_files = _read_le_u32(temp_file, 4);
     string_table_size = _read_le_u32(temp_file, 8);
     if (!memcmp(temp_file + 0x10 + num_files * 0x18, "main.npdm", 9))
         crypt_offset += _read_le_u32(temp_file, 0x18);
     crypt_offset += 0x10 + num_files * 0x18 + string_table_size;
     read_size = 0x40;
-    _nca_fread_ctr(2, fp, temp_file, crypt_offset, read_size, ctr);
+    _nca_fread_ctr(6, fp, temp_file, crypt_offset, read_size, ctr);
     rodata_offset = _read_le_u32(temp_file, 0x20);
 
     void *buf = malloc(len);
-    _nca_fread_ctr(2, fp, buf, crypt_offset + rodata_offset + key_offset, len, ctr);
+    _nca_fread_ctr(6, fp, buf, crypt_offset + rodata_offset + key_offset, len, ctr);
     free(temp_file);
 
     return buf;
@@ -1202,7 +1202,7 @@ static void _mgf1_xor(void *masked, u32 masked_size, const void *seed, u32 seed_
     u8 *p_out = (u8 *)masked;
 
     while (masked_size) {
-        u32 cur_size = masked_size > 0x20 ? 0x20 : masked_size;
+        u32 cur_size = MIN(masked_size, 0x20);
 
         for (u32 i = 0; i < 4; i++)
             hash_buf[seed_size + 3 - i] = (round_num >> (8 * i)) & 0xff;
