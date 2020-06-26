@@ -736,14 +736,14 @@ get_titlekeys:
 
     se_aes_xts_crypt(1, 0, 0, 0, buffer, buffer, 0x4000, 1);
 
-    if (_read_le_u32(buffer, 0) != 0x304C4143) {
+    nx_emmc_cal0_t *cal0 = (nx_emmc_cal0_t *)buffer;
+    if (cal0->magic != 0x304C4143) {
         EPRINTF("CAL0 magic not found. Check BIS key 0.");
         goto dismount;
     }
 
-    u32 cal_version = _read_le_u32(buffer, 4);
-    u32 keypair_generation = _read_le_u32(buffer, 0x3AD0);
-    if (cal_version <= 8)
+    u32 keypair_generation = cal0->ext_ecc_rsa2048_eticket_key_ver;
+    if (cal0->version <= 8)
         keypair_generation = 0; // settings zeroes this out below cal version 9
 
     if (keypair_generation) {
@@ -760,7 +760,7 @@ get_titlekeys:
     }
 
     se_aes_key_set(6, temp_key, 0x10);
-    se_aes_crypt_ctr(6, keypair, 0x230, buffer + 0x38a0, 0x230, buffer + 0x3890);
+    se_aes_crypt_ctr(6, keypair, 0x230, cal0->ext_ecc_rsa2048_eticket_key + 0x10, 0x230, cal0->ext_ecc_rsa2048_eticket_key);
 
     u8 *D = keypair, *N = keypair + 0x100, *E = keypair + 0x200;
 

@@ -164,7 +164,8 @@ typedef struct _nx_emmc_cal0_t
 	u8   ext_ecc_b233_eticket_key[0x50];
 	u8   crc16_pad37[0x10];
 	u8   ext_ecc_rsa2048_eticket_key[0x240];
-	u8   crc16_pad38[0x10];
+	u32  ext_ecc_rsa2048_eticket_key_ver;
+	u8   crc16_pad38[0xC];
 	u8   ext_ssl_key[0x130];
 	u8   crc16_pad39[0x10];
 	u8   ext_gc_key[0x130];

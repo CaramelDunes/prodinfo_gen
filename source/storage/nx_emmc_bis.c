@@ -54,7 +54,8 @@ static void _gf256_mul_x_le(void *block)
 	u32 *pdata = (u32 *)block;
 	u32 carry = 0;
 
-	for (u32 i = 0; i < 4; i++) {
+	for (u32 i = 0; i < 4; i++)
+	{
 		u32 b = pdata[i];
 		pdata[i] = (b << 1) | carry;
 		carry = b >> 31;
@@ -215,7 +216,8 @@ int nx_emmc_bis_read(u32 sector, u32 count, void *buff)
 	return res;
 }
 
-void nx_emmc_bis_cluster_cache_init() {
+void nx_emmc_bis_cluster_cache_init()
+{
 	// Clear cluster lookup table and reset end index.
 	memset(cluster_lookup, -1, (system_part->lba_end - system_part->lba_start + 1) / SECTORS_PER_CLUSTER * sizeof(*cluster_lookup));
 	cluster_cache_end_index = 0;
