@@ -23,7 +23,6 @@
 #include <gfx/di.h>
 #include <gfx_utils.h>
 #include "gfx/tui.h"
-#include "hos/pkg1.h"
 #include <libs/fatfs/ff.h>
 #include <mem/heap.h>
 #include <mem/minerva.h>
@@ -298,31 +297,27 @@ void _get_key_generations(char *sysnand_label, char *emunand_label)
 	sdmmc_t sdmmc;
 	sdmmc_storage_t storage;
 	sdmmc_storage_init_mmc(&storage, &sdmmc, SDMMC_BUS_WIDTH_8, SDHCI_TIMING_MMC_HS400);
-	u8 *pkg1 = (u8 *)malloc(NX_EMMC_BLOCKSIZE);
+	u8 *bct = (u8 *)malloc(NX_EMMC_BLOCKSIZE);
 	sdmmc_storage_set_mmc_partition(&storage, EMMC_BOOT0);
-	sdmmc_storage_read(&storage, 0x100000 / NX_EMMC_BLOCKSIZE, 1, pkg1);
-	const pkg1_id_t *pkg1_id = pkg1_identify(pkg1);
+	sdmmc_storage_read(&storage, 0x2200 / NX_EMMC_BLOCKSIZE, 1, bct);
 	sdmmc_storage_end(&storage);
 
-	if (pkg1_id)
-		sprintf(sysnand_label + 36, "% 3d", pkg1_id->kb);
+	sprintf(sysnand_label + 36, "% 3d", bct[0x130] - 1);
 	ment_top[0].caption = sysnand_label;
 	if (h_cfg.emummc_force_disable)
 	{
-		free(pkg1);
+		free(bct);
 		return;
 	}
 
 	emummc_storage_init_mmc(&storage, &sdmmc);
-	memset(pkg1, 0, NX_EMMC_BLOCKSIZE);
+	memset(bct, 0, NX_EMMC_BLOCKSIZE);
 	emummc_storage_set_mmc_partition(&storage, EMMC_BOOT0);
-	emummc_storage_read(&storage, 0x100000 / NX_EMMC_BLOCKSIZE, 1, pkg1);
-	pkg1_id = pkg1_identify(pkg1);
+	emummc_storage_read(&storage, 0x2200 / NX_EMMC_BLOCKSIZE, 1, bct);
 	emummc_storage_end(&storage);
 
-	if (pkg1_id)
-		sprintf(emunand_label + 36, "% 3d", pkg1_id->kb);
-	free(pkg1);
+	sprintf(emunand_label + 36, "% 3d", bct[0x130] - 1);
+	free(bct);
 	ment_top[1].caption = emunand_label;
 }
 
