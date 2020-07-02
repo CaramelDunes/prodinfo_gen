@@ -225,8 +225,10 @@ typedef struct _nx_emmc_cal0_t
 } __attribute__((packed)) nx_emmc_cal0_t;
 
 int nx_emmc_bis_read(u32 sector, u32 count, void *buff);
+int nx_emmc_bis_write(u32 sector, u32 count, void *buff);
 void nx_emmc_bis_cluster_cache_init();
 void nx_emmc_bis_init(emmc_part_t *part);
+void nx_emmc_bis_finalize();
 void nx_emmc_bis_cache_lock(bool lock);
 
 #endif

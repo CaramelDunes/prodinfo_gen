@@ -41,12 +41,19 @@ typedef struct
 	u8  cluster[XTS_CLUSTER_SIZE];  // the cached cluster itself
 } cluster_cache_t;
 
+typedef struct
+{
+	u8 emmc_buffer[XTS_CLUSTER_SIZE];
+	cluster_cache_t cluster_cache[];
+} bis_cache_t;
+
 static u8 ks_crypt = 0;
 static u8 ks_tweak = 0;
+static u8 cache_filled = 0;
+static u32 dirty_cluster_count = 0;
 static u32 cluster_cache_end_index = 0;
 static emmc_part_t *system_part = NULL;
-static u8 *emmc_buffer = (u8 *)NX_BIS_CACHE_ADDR;
-static cluster_cache_t *cluster_cache = (cluster_cache_t *)(NX_BIS_CACHE_ADDR + XTS_CLUSTER_SIZE);
+static bis_cache_t *bis_cache = (bis_cache_t *)NX_BIS_CACHE_ADDR;
 static u32 *cluster_lookup_buf = NULL;
 static u32 *cluster_lookup = NULL;
 static bool lock_cluster_cache = false;
@@ -119,6 +126,59 @@ static int _nx_aes_xts_crypt_sec(u32 tweak_ks, u32 crypt_ks, u32 enc, u8 *tweak,
 	return 1;
 }
 
+static int nx_emmc_bis_write_block(u32 sector, u32 count, void *buff, bool force_flush)
+{
+	if (!system_part)
+		return 3; // Not ready.
+
+	u8 tweak[0x10];
+	u32 cluster = sector / SECTORS_PER_CLUSTER;
+	u32 aligned_sector = cluster * SECTORS_PER_CLUSTER;
+	u32 sector_index_in_cluster = sector % SECTORS_PER_CLUSTER;
+	u32 cluster_lookup_index = cluster_lookup[cluster];
+	bool is_cached = cluster_lookup_index != CLUSTER_LOOKUP_EMPTY_ENTRY;
+
+	// Write to cached cluster.
+	if (is_cached)
+	{
+		if (buff)
+			memcpy(bis_cache->cluster_cache[cluster_lookup_index].cluster + sector_index_in_cluster * NX_EMMC_BLOCKSIZE, buff, count * NX_EMMC_BLOCKSIZE);
+		else
+			buff = bis_cache->cluster_cache[cluster_lookup_index].cluster;
+		bis_cache->cluster_cache[cluster_lookup_index].visit_count++;
+		if (bis_cache->cluster_cache[cluster_lookup_index].dirty == 0)
+			dirty_cluster_count++;
+		bis_cache->cluster_cache[cluster_lookup_index].dirty = 1;
+		if (!force_flush)
+			return 0; // Success.
+
+		// Reset args to trigger a full cluster flush to emmc.
+		sector_index_in_cluster = 0;
+		sector = aligned_sector;
+		count = SECTORS_PER_CLUSTER;
+	}
+
+	// Encrypt and write.
+	if (!_nx_aes_xts_crypt_sec(ks_tweak, ks_crypt, 1, tweak, true, sector_index_in_cluster, cluster, bis_cache->emmc_buffer, buff, count * NX_EMMC_BLOCKSIZE) ||
+		!nx_emmc_part_write(&emmc_storage, system_part, sector, count, bis_cache->emmc_buffer)
+	)
+		return 1; // R/W error.
+
+	// Mark cache entry not dirty if write succeeds.
+	if (is_cached)
+	{
+		bis_cache->cluster_cache[cluster_lookup_index].dirty = 0;
+		dirty_cluster_count--;
+	}
+
+	return 0; // Success.
+}
+
+static void _nx_emmc_bis_flush_cluster(cluster_cache_t *cache_entry)
+{
+	nx_emmc_bis_write_block(cache_entry->cluster_num * SECTORS_PER_CLUSTER, SECTORS_PER_CLUSTER, NULL, true);
+}
+
 static int nx_emmc_bis_read_block(u32 sector, u32 count, void *buff)
 {
 	if (!system_part)
@@ -137,39 +197,48 @@ static int nx_emmc_bis_read_block(u32 sector, u32 count, void *buff)
 	u32 sector_index_in_cluster = sector % SECTORS_PER_CLUSTER;
 	u32 cluster_lookup_index = cluster_lookup[cluster];
 
+	// Read from cached cluster.
 	if (cluster_lookup_index != CLUSTER_LOOKUP_EMPTY_ENTRY)
 	{
-		memcpy(buff, cluster_cache[cluster_lookup_index].cluster + sector_index_in_cluster * NX_EMMC_BLOCKSIZE, count * NX_EMMC_BLOCKSIZE);
-		cluster_cache[cluster_lookup_index].visit_count++;
+		memcpy(buff, bis_cache->cluster_cache[cluster_lookup_index].cluster + sector_index_in_cluster * NX_EMMC_BLOCKSIZE, count * NX_EMMC_BLOCKSIZE);
+		bis_cache->cluster_cache[cluster_lookup_index].visit_count++;
 		prev_sector = sector + count - 1;
 		prev_cluster = cluster;
 		return 0; // Success.
 	}
 
-	// Only cache single-sector reads as these are most likely to be repeated, such as boot block and FAT directory tables.
-	if (!lock_cluster_cache &&
-		cluster_cache_end_index < MAX_CLUSTER_CACHE_ENTRIES)
+	// Cache cluster.
+	if (!lock_cluster_cache)
 	{
-		cluster_cache[cluster_cache_end_index].cluster_num = cluster;
-		cluster_cache[cluster_cache_end_index].visit_count = 1;
-		cluster_cache[cluster_cache_end_index].dirty = 0;
+		// Roll the cache index over and flush if full.
+		if (cluster_cache_end_index >= MAX_CLUSTER_CACHE_ENTRIES)
+		{
+			cluster_cache_end_index = 0;
+			cache_filled = 1;
+		}
+		// Check if cache entry was previously in use in case of cache loop.
+		if (cache_filled == 1 && bis_cache->cluster_cache[cluster_cache_end_index].dirty == 1)
+			_nx_emmc_bis_flush_cluster(&bis_cache->cluster_cache[cluster_cache_end_index]);
+		bis_cache->cluster_cache[cluster_cache_end_index].cluster_num = cluster;
+		bis_cache->cluster_cache[cluster_cache_end_index].visit_count = 1;
+		bis_cache->cluster_cache[cluster_cache_end_index].dirty = 0;
 		cluster_lookup[cluster] = cluster_cache_end_index;
 
 		// Read and decrypt the whole cluster the sector resides in.
-		if (!nx_emmc_part_read(&emmc_storage, system_part, aligned_sector, SECTORS_PER_CLUSTER, emmc_buffer))
-			return 1; // R/W error.
-		if (!_nx_aes_xts_crypt_sec(ks_tweak, ks_crypt, 0, cache_tweak, true, 0, cluster, emmc_buffer, emmc_buffer, XTS_CLUSTER_SIZE))
+		if (!nx_emmc_part_read(&emmc_storage, system_part, aligned_sector, SECTORS_PER_CLUSTER, bis_cache->emmc_buffer) ||
+			!_nx_aes_xts_crypt_sec(ks_tweak, ks_crypt, 0, cache_tweak, true, 0, cluster, bis_cache->emmc_buffer, bis_cache->emmc_buffer, XTS_CLUSTER_SIZE)
+		)
 			return 1; // R/W error.
 
 		// Copy to cluster cache.
-		memcpy(cluster_cache[cluster_cache_end_index].cluster, emmc_buffer, XTS_CLUSTER_SIZE);
-		memcpy(buff, emmc_buffer + sector_index_in_cluster * NX_EMMC_BLOCKSIZE, NX_EMMC_BLOCKSIZE * count);
+		memcpy(bis_cache->cluster_cache[cluster_cache_end_index].cluster, bis_cache->emmc_buffer, XTS_CLUSTER_SIZE);
+		memcpy(buff, bis_cache->emmc_buffer + sector_index_in_cluster * NX_EMMC_BLOCKSIZE, count * NX_EMMC_BLOCKSIZE);
 		cluster_cache_end_index++;
 		return 0; // Success.
 	}
 
 	// If not reading from or writing to cache, do a regular read and decrypt.
-	if (!nx_emmc_part_read(&emmc_storage, system_part, sector, count, buff))
+	if (!nx_emmc_part_read(&emmc_storage, system_part, sector, count, bis_cache->emmc_buffer))
 		return 1; // R/W error.
 
 	if (prev_cluster != cluster) // Sector in different cluster than last read.
@@ -187,7 +256,7 @@ static int nx_emmc_bis_read_block(u32 sector, u32 count, void *buff)
 		tweak_exp = sector_index_in_cluster;
 
 	// Maximum one cluster (1 XTS crypto block 16KB).
-	if (!_nx_aes_xts_crypt_sec(ks_tweak, ks_crypt, 0, tweak, regen_tweak, tweak_exp, prev_cluster, buff, buff, count * NX_EMMC_BLOCKSIZE))
+	if (!_nx_aes_xts_crypt_sec(ks_tweak, ks_crypt, 0, tweak, regen_tweak, tweak_exp, prev_cluster, buff, bis_cache->emmc_buffer, count * NX_EMMC_BLOCKSIZE))
 		return 1; // R/W error.
 	prev_sector = sector + count - 1;
 
@@ -204,6 +273,27 @@ int nx_emmc_bis_read(u32 sector, u32 count, void *buff)
 	{
 		u32 sct_cnt = MIN(count, 0x20);
 		res = nx_emmc_bis_read_block(curr_sct, sct_cnt, buf);
+		if (res)
+			return 1;
+
+		count -= sct_cnt;
+		curr_sct += sct_cnt;
+		buf += NX_EMMC_BLOCKSIZE * sct_cnt;
+	}
+
+	return res;
+}
+
+int nx_emmc_bis_write(u32 sector, u32 count, void *buff)
+{
+	int res = 1;
+	u8 *buf = (u8 *)buff;
+	u32 curr_sct = sector;
+
+	while (count)
+	{
+		u32 sct_cnt = MIN(count, 0x20);
+		res = nx_emmc_bis_write_block(curr_sct, sct_cnt, buf, false);
 		if (res)
 			return 1;
 
@@ -239,6 +329,9 @@ void nx_emmc_bis_cluster_cache_init()
 	memset(cluster_lookup, -1, cluster_lookup_size);
 	cluster_cache_end_index = 0;
 	lock_cluster_cache = false;
+
+	dirty_cluster_count = 0;
+	cache_filled = 0;
 }
 
 void nx_emmc_bis_init(emmc_part_t *part)
@@ -246,7 +339,7 @@ void nx_emmc_bis_init(emmc_part_t *part)
 	system_part = part;
 
 	nx_emmc_bis_cluster_cache_init();
-	
+
 	switch (part->index)
 	{
 	case 0:  // PRODINFO.
@@ -263,6 +356,19 @@ void nx_emmc_bis_init(emmc_part_t *part)
 		ks_crypt = 4;
 		ks_tweak = 5;
 		break;
+	}
+}
+
+void nx_emmc_bis_finalize()
+{
+	if (dirty_cluster_count == 0)
+		return;
+
+	u32 limit = cache_filled == 1 ? MAX_CLUSTER_CACHE_ENTRIES : cluster_cache_end_index;
+	for (u32 i = 0; i < limit; i++)
+	{
+		if (bis_cache->cluster_cache[i].dirty)
+			_nx_emmc_bis_flush_cluster(&bis_cache->cluster_cache[i]);
 	}
 }
 
