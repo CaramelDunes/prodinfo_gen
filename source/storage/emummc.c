@@ -276,7 +276,7 @@ int emummc_storage_set_mmc_partition(sdmmc_storage_t *storage, u32 partition)
 	emu_cfg.active_part = partition;
 
 	if (!emu_cfg.enabled || h_cfg.emummc_force_disable)
-		sdmmc_storage_set_mmc_partition(storage, partition);
+		return sdmmc_storage_set_mmc_partition(storage, partition);
 	else if (emu_cfg.sector)
 		return 1;
 	else

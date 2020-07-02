@@ -265,6 +265,7 @@ out:
 void dump_sysnand()
 {
 	h_cfg.emummc_force_disable = true;
+	emu_cfg.enabled = false;
 	b_cfg.extra_cfg &= ~EXTRA_CFG_DUMP_EMUMMC;
 	dump_keys();
 }
@@ -273,7 +274,7 @@ void dump_emunand()
 {
 	if (h_cfg.emummc_force_disable)
 		return;
-	emu_cfg.enabled = 1;
+	emu_cfg.enabled = true;
 	b_cfg.extra_cfg |= EXTRA_CFG_DUMP_EMUMMC;
 	dump_keys();
 }
@@ -366,11 +367,14 @@ void ipl_main()
 	emummc_load_cfg();
 	// Ignore whether emummc is enabled.
 	h_cfg.emummc_force_disable = emu_cfg.sector == 0 && !emu_cfg.path;
+	emu_cfg.enabled = !h_cfg.emummc_force_disable;
 
 	if (b_cfg.boot_cfg & BOOT_CFG_SEPT_RUN)
 	{
-		if (!(b_cfg.extra_cfg & EXTRA_CFG_DUMP_EMUMMC))
+		if (!(b_cfg.extra_cfg & EXTRA_CFG_DUMP_EMUMMC)) {
 			h_cfg.emummc_force_disable = true;
+			emu_cfg.enabled = false;
+		}
 		dump_keys();
 	}
 

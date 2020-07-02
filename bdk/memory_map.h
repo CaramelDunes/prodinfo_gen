@@ -79,6 +79,7 @@
 #define  NYX_FB_SZ         0x384000 // 1280 x 720 x 4.
 
 #define DRAM_MEM_HOLE_ADR 0xF6A00000
+#define NX_BIS_LOOKUP_ADR DRAM_MEM_HOLE_ADR
 #define DRAM_MEM_HOLE_SZ   0x8140000
 /* ---   Hole: 129MB 0xF6A00000 - 0xFEB3FFFF --- */
 #define DRAM_START2       0xFEB40000

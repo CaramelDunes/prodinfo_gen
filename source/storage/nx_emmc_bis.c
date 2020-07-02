@@ -21,12 +21,13 @@
 
 #include <memory_map.h>
 
+#include <mem/heap.h>
 #include <sec/se.h>
 #include "../storage/nx_emmc.h"
 #include <storage/sdmmc.h>
 #include <utils/types.h>
 
-#define MAX_CLUSTER_CACHE_ENTRIES 128
+#define MAX_CLUSTER_CACHE_ENTRIES 32768
 #define CLUSTER_LOOKUP_EMPTY_ENTRY 0xFFFFFFFF
 #define XTS_CLUSTER_SIZE 0x4000
 #define SECTORS_PER_CLUSTER 0x20
@@ -46,7 +47,8 @@ static u32 cluster_cache_end_index = 0;
 static emmc_part_t *system_part = NULL;
 static u8 *emmc_buffer = (u8 *)NX_BIS_CACHE_ADDR;
 static cluster_cache_t *cluster_cache = (cluster_cache_t *)(NX_BIS_CACHE_ADDR + XTS_CLUSTER_SIZE);
-static u32 *cluster_lookup = (u32 *)(NX_BIS_CACHE_ADDR + XTS_CLUSTER_SIZE + MAX_CLUSTER_CACHE_ENTRIES * sizeof(cluster_cache_t));
+static u32 *cluster_lookup_buf = NULL;
+static u32 *cluster_lookup = NULL;
 static bool lock_cluster_cache = false;
 
 static void _gf256_mul_x_le(void *block)
@@ -125,6 +127,7 @@ static int nx_emmc_bis_read_block(u32 sector, u32 count, void *buff)
 	static u32 prev_cluster = -1;
 	static u32 prev_sector = 0;
 	static u8 tweak[0x10];
+	u8 cache_tweak[0x10];
 
 	u32 tweak_exp = 0;
 	bool regen_tweak = true;
@@ -144,10 +147,8 @@ static int nx_emmc_bis_read_block(u32 sector, u32 count, void *buff)
 	}
 
 	// Only cache single-sector reads as these are most likely to be repeated, such as boot block and FAT directory tables.
-	if (count == 1 &&
-		!lock_cluster_cache &&
-		cluster_cache_end_index < MAX_CLUSTER_CACHE_ENTRIES &&
-		cluster_lookup_index == CLUSTER_LOOKUP_EMPTY_ENTRY)
+	if (!lock_cluster_cache &&
+		cluster_cache_end_index < MAX_CLUSTER_CACHE_ENTRIES)
 	{
 		cluster_cache[cluster_cache_end_index].cluster_num = cluster;
 		cluster_cache[cluster_cache_end_index].visit_count = 1;
@@ -157,14 +158,12 @@ static int nx_emmc_bis_read_block(u32 sector, u32 count, void *buff)
 		// Read and decrypt the whole cluster the sector resides in.
 		if (!nx_emmc_part_read(&emmc_storage, system_part, aligned_sector, SECTORS_PER_CLUSTER, emmc_buffer))
 			return 1; // R/W error.
-		if (!_nx_aes_xts_crypt_sec(ks_tweak, ks_crypt, 0, tweak, true, 0, cluster, emmc_buffer, emmc_buffer, XTS_CLUSTER_SIZE))
+		if (!_nx_aes_xts_crypt_sec(ks_tweak, ks_crypt, 0, cache_tweak, true, 0, cluster, emmc_buffer, emmc_buffer, XTS_CLUSTER_SIZE))
 			return 1; // R/W error.
 
 		// Copy to cluster cache.
 		memcpy(cluster_cache[cluster_cache_end_index].cluster, emmc_buffer, XTS_CLUSTER_SIZE);
-		memcpy(buff, emmc_buffer + sector_index_in_cluster * NX_EMMC_BLOCKSIZE, NX_EMMC_BLOCKSIZE);
-		prev_cluster = -1;
-		prev_sector = 0;
+		memcpy(buff, emmc_buffer + sector_index_in_cluster * NX_EMMC_BLOCKSIZE, NX_EMMC_BLOCKSIZE * count);
 		cluster_cache_end_index++;
 		return 0; // Success.
 	}
@@ -218,8 +217,26 @@ int nx_emmc_bis_read(u32 sector, u32 count, void *buff)
 
 void nx_emmc_bis_cluster_cache_init()
 {
+	u32 cluster_lookup_size = (system_part->lba_end - system_part->lba_start + 1) / SECTORS_PER_CLUSTER * sizeof(*cluster_lookup);
+
+	if (cluster_lookup_buf)
+		free(cluster_lookup_buf);
+
+	// Check if carveout protected, in case of old hwinit (pre 4.0.0) chainload.
+	*(vu32 *)NX_BIS_LOOKUP_ADR = 0;
+	if (*(vu32 *)NX_BIS_LOOKUP_ADR != 0)
+	{
+		cluster_lookup_buf = (u32 *)malloc(cluster_lookup_size + 0x2000);
+		cluster_lookup = (u32 *)ALIGN((u32)cluster_lookup_buf, 0x1000);
+	}
+	else
+	{
+		cluster_lookup_buf = NULL;
+		cluster_lookup = (u32 *)NX_BIS_LOOKUP_ADR;
+	}
+
 	// Clear cluster lookup table and reset end index.
-	memset(cluster_lookup, -1, (system_part->lba_end - system_part->lba_start + 1) / SECTORS_PER_CLUSTER * sizeof(*cluster_lookup));
+	memset(cluster_lookup, -1, cluster_lookup_size);
 	cluster_cache_end_index = 0;
 	lock_cluster_cache = false;
 }

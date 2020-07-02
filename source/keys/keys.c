@@ -25,6 +25,7 @@
 #include "../hos/pkg2.h"
 #include "../hos/sept.h"
 #include <libs/fatfs/ff.h>
+#include <libs/save/save.h>
 #include <mem/heap.h>
 #include <mem/mc.h>
 #include <mem/minerva.h>
@@ -46,7 +47,6 @@
 #include <utils/util.h>
 
 #include "key_sources.inl"
-#include "save.h"
 
 #include <string.h>
 
@@ -123,13 +123,11 @@ void dump_keys() {
     sd_mount();
 
     display_backlight_brightness(h_cfg.backlight, 1000);
-    gfx_clear_partial_grey(0x1B, 0, 1256);
+    gfx_clear_grey(0x1B);
     gfx_con_setpos(0, 0);
 
     gfx_printf("[%kLo%kck%kpi%kck%k_R%kCM%k v%d.%d.%d%k]\n\n",
         colors[0], colors[1], colors[2], colors[3], colors[4], colors[5], 0xFFFF00FF, LP_VER_MJ, LP_VER_MN, LP_VER_BF, 0xFFCCCCCC);
-
-    tui_sbar(true);
 
     _key_count = 0;
     _titlekey_count = 0;
@@ -150,8 +148,14 @@ void dump_keys() {
 
     // Read package1.
     u8 *pkg1 = (u8 *)malloc(0x40000);
-    emummc_storage_set_mmc_partition(&emmc_storage, EMMC_BOOT0);
-    emummc_storage_read(&emmc_storage, 0x100000 / NX_EMMC_BLOCKSIZE, 0x40000 / NX_EMMC_BLOCKSIZE, pkg1);
+    if (!emummc_storage_set_mmc_partition(&emmc_storage, EMMC_BOOT0)) {
+        EPRINTF("Unable to set partition.");
+        goto out_wait;
+    }
+    if (!emummc_storage_read(&emmc_storage, 0x100000 / NX_EMMC_BLOCKSIZE, 0x40000 / NX_EMMC_BLOCKSIZE, pkg1)) {
+        EPRINTF("Unable to read pkg1.");
+        goto out_wait;
+    }
     const pkg1_id_t *pkg1_id = pkg1_identify(pkg1);
     if (!pkg1_id) {
         EPRINTF("Unknown pkg1 version.\n Make sure you have the latest Lockpick_RCM.\n If a new firmware version just came out,\n Lockpick_RCM must be updated.\n Check Github for new release.");
@@ -326,7 +330,10 @@ get_tsec: ;
         }
 
         // verify keyblob is not corrupt
-        emummc_storage_read(&emmc_storage, 0x180000 / NX_EMMC_BLOCKSIZE + i, 1, keyblob_block);
+        if (!emummc_storage_read(&emmc_storage, 0x180000 / NX_EMMC_BLOCKSIZE + i, 1, keyblob_block)) {
+            EPRINTFARGS("Unable to read keyblob %x.", i);
+            continue;
+        }
         se_aes_key_set(10, keyblob_mac_key[i], 0x10);
         se_aes_cmac(10, keyblob_mac, 0x10, keyblob_block + 0x10, 0xa0);
         if (memcmp(keyblob_block, keyblob_mac, 0x10) != 0) {
@@ -381,7 +388,10 @@ get_tsec: ;
     u8 *pkg2 = NULL;
     pkg2_kip1_info_t *ki = NULL;
 
-    emummc_storage_set_mmc_partition(&emmc_storage, EMMC_GPP);
+    if (!emummc_storage_set_mmc_partition(&emmc_storage, EMMC_GPP)) {
+        EPRINTF("Unable to set partition.");
+        goto out_wait;
+    }
     // Parse eMMC GPT.
     LIST_INIT(gpt);
     nx_emmc_gpt_parse(&gpt, &emmc_storage);
@@ -596,7 +606,6 @@ pkg2_done:
     }
 
     path[24] = '/';
-    nx_emmc_bis_cache_lock(true);
     while (!f_readdir(&dir, &fno) && fno.fname[0] && titles_found < title_limit) {
         minerva_periodic_training();
         memcpy(path + 25, fno.fname, 36);
@@ -659,7 +668,6 @@ pkg2_done:
     }
     f_closedir(&dir);
     free(dec_header);
-    nx_emmc_bis_cache_lock(false);
 
     // derive eticket_rsa_kek and ssl_rsa_kek
     if (_key_exists(es_keys[0]) && _key_exists(es_keys[1]) && _key_exists(master_key[0])) {
@@ -732,7 +740,10 @@ get_titlekeys:
 
     u8 keypair[0x230] = {0};
 
-    emummc_storage_read(&emmc_storage, 0x4400 / NX_EMMC_BLOCKSIZE, 0x4000 / NX_EMMC_BLOCKSIZE, buffer);
+    if (!emummc_storage_read(&emmc_storage, 0x4400 / NX_EMMC_BLOCKSIZE, 0x4000 / NX_EMMC_BLOCKSIZE, buffer)) {
+        EPRINTF("Unable to read PRODINFO.");
+        goto dismount;
+    }
 
     se_aes_xts_crypt(1, 0, 0, 0, buffer, buffer, 0x4000, 1);
 
@@ -777,9 +788,9 @@ get_titlekeys:
 
     se_rsa_key_set(0, N, 0x100, D, 0x100);
 
-    u32 br = buf_size;
+    u64 br = buf_size;
     u32 file_tkey_count = 0;
-    u64 total_br = 0;
+    u64 offset = 0;
     rights_ids = (u8 *)(MIXD_BUF_ALIGNED + 0x40000);
     titlekeys = (u8 *)(MIXD_BUF_ALIGNED + 0x80000);
     save_ctx = calloc(1, sizeof(save_ctx_t));
@@ -792,48 +803,52 @@ get_titlekeys:
     u32 pct = 0, last_pct = 0;
 
     save_ctx->file = &fp;
-    save_ctx->tool_ctx.action = 0;
+    save_ctx->action = 0;
     memcpy(save_ctx->save_mac_key, save_mac_key, 0x10);
 
-    nx_emmc_bis_cluster_cache_init();
     save_process_success = save_process(save_ctx);
+
     if (!save_process_success) {
         EPRINTF("Failed to process e1 save.");
         f_close(&fp);
         goto dismount;
     }
 
-    char ticket_bin_path[SAVE_FS_LIST_MAX_NAME_LENGTH] = "/ticket.bin";
-    char ticket_list_bin_path[SAVE_FS_LIST_MAX_NAME_LENGTH] = "/ticket_list.bin";
-    allocation_table_storage_ctx_t fat_storage;
-    save_fs_list_entry_t entry = {0, "", {0}, 0};
-    if (!save_hierarchical_file_table_get_file_entry_by_path(&save_ctx->save_filesystem_core.file_table, ticket_list_bin_path, &entry)) {
+    char ticket_bin_path[0x40] = "/ticket.bin";
+    char ticket_list_bin_path[0x40] = "/ticket_list.bin";
+    save_data_file_ctx_t ticket_file;
+
+    if (!save_open_file(save_ctx, &ticket_file, ticket_list_bin_path, OPEN_MODE_READ)) {
         EPRINTF("Unable to locate ticket_list.bin in e1.");
         f_close(&fp);
         goto dismount;
     }
-    save_open_fat_storage(&save_ctx->save_filesystem_core, &fat_storage, entry.value.save_file_info.start_block);
-    while (br == buf_size && total_br < entry.value.save_file_info.length) {
-        br = save_allocation_table_storage_read(&fat_storage, buffer, total_br, buf_size);
-        if (buffer[0] == 0) break;
-        total_br += br;
+
+    while (br == buf_size && offset < ticket_file.size) {
+        if (!save_data_file_read(&ticket_file, &br, offset, buffer, buf_size) || buffer[0] == 0)
+            break;
+        offset += br;
         minerva_periodic_training();
         for (u32 j = 0; j < buf_size; j += 0x20) {
-            if (buffer[j] == 0xff && buffer[j+1] == 0xff && buffer[j+2] == 0xff && buffer[j+3] == 0xff) break;
+            if (buffer[j] == 0xff && buffer[j+1] == 0xff && buffer[j+2] == 0xff && buffer[j+3] == 0xff)
+                break;
             file_tkey_count++;
         }
     }
-    if (!save_hierarchical_file_table_get_file_entry_by_path(&save_ctx->save_filesystem_core.file_table, ticket_bin_path, &entry)) {
+
+    if (!save_open_file(save_ctx, &ticket_file, ticket_bin_path, OPEN_MODE_READ)) {
         EPRINTF("Unable to locate ticket.bin in e1 save.");
         f_close(&fp);
         goto dismount;
     }
-    save_open_fat_storage(&save_ctx->save_filesystem_core, &fat_storage, entry.value.save_file_info.start_block);
-    total_br = 0;
-    while (br == buf_size && total_br < entry.value.save_file_info.length) {
-        br = save_allocation_table_storage_read(&fat_storage, buffer, total_br, buf_size);
-        if (buffer[0] == 0) break;
-        total_br += br;
+
+    offset = 0;
+    br = buf_size;
+
+    while (br == buf_size && offset < ticket_file.size) {
+        if (!save_data_file_read(&ticket_file, &br, offset, buffer, buf_size) || buffer[0] == 0)
+            break;
+        offset += br;
         for (u32 j = 0; j < buf_size; j += 0x400) {
             pct = _titlekey_count * 100 / file_tkey_count;
             if (pct > last_pct && pct <= 100) {
@@ -855,7 +870,6 @@ get_titlekeys:
     save_free_contexts(save_ctx);
     save_process_success = false;
     memset(save_ctx, 0, sizeof(save_ctx_t));
-    memset(&fat_storage, 0, sizeof(allocation_table_storage_ctx_t));
 
     gfx_con_setpos(0, save_y);
     TPRINTFARGS("\n%kCommon...       ", colors[(color_idx++) % 6]);
@@ -870,10 +884,9 @@ get_titlekeys:
     }
 
     save_ctx->file = &fp;
-    save_ctx->tool_ctx.action = 0;
+    save_ctx->action = 0;
     memcpy(save_ctx->save_mac_key, save_mac_key, 0x10);
 
-    nx_emmc_bis_cluster_cache_init();
     save_process_success = save_process(save_ctx);
     if (!save_process_success) {
         EPRINTF("Failed to process e2 save.");
@@ -881,40 +894,41 @@ get_titlekeys:
         goto dismount;
     }
 
-    if (!save_hierarchical_file_table_get_file_entry_by_path(&save_ctx->save_filesystem_core.file_table, ticket_list_bin_path, &entry)) {
+    if (!save_open_file(save_ctx, &ticket_file, ticket_list_bin_path, OPEN_MODE_READ)) {
         EPRINTF("Unable to locate ticket_list.bin in e2 save.");
         f_close(&fp);
         goto dismount;
     }
-    save_open_fat_storage(&save_ctx->save_filesystem_core, &fat_storage, entry.value.save_file_info.start_block);
 
-    total_br = 0;
+    offset = 0;
     file_tkey_count = 0;
-    while (br == buf_size && total_br < entry.value.save_file_info.length) {
-        br = save_allocation_table_storage_read(&fat_storage, buffer, total_br, buf_size);
-        if (buffer[0] == 0) break;
-        total_br += br;
+    br = buf_size;
+    while (br == buf_size && offset < ticket_file.size) {
+        if (!save_data_file_read(&ticket_file, &br, offset, buffer, buf_size) || buffer[0] == 0)
+            break;
+        offset += br;
         minerva_periodic_training();
         for (u32 j = 0; j < buf_size; j += 0x20) {
-            if (buffer[j] == 0xff && buffer[j+1] == 0xff && buffer[j+2] == 0xff && buffer[j+3] == 0xff) break;
+            if (buffer[j] == 0xff && buffer[j+1] == 0xff && buffer[j+2] == 0xff && buffer[j+3] == 0xff)
+                break;
             file_tkey_count++;
         }
     }
-    if (!save_hierarchical_file_table_get_file_entry_by_path(&save_ctx->save_filesystem_core.file_table, ticket_bin_path, &entry)) {
+
+   if (!save_open_file(save_ctx, &ticket_file, ticket_bin_path, OPEN_MODE_READ)) {
         EPRINTF("Unable to locate ticket.bin in e2 save.");
         f_close(&fp);
         goto dismount;
     }
 
-    save_open_fat_storage(&save_ctx->save_filesystem_core, &fat_storage, entry.value.save_file_info.start_block);
-
-    total_br = 0;
+    offset = 0;
     pct = 0;
     last_pct = 0;
-    while (br == buf_size && total_br < entry.value.save_file_info.length) {
-        br = save_allocation_table_storage_read(&fat_storage, buffer, total_br, buf_size);
-        if (buffer[0] == 0) break;
-        total_br += br;
+    br = buf_size;
+    while (br == buf_size && offset < ticket_file.size) {
+        if (!save_data_file_read(&ticket_file, &br, offset, buffer, buf_size) || buffer[0] == 0)
+            break;
+        offset += br;
         for (u32 j = 0; j < buf_size; j += 0x400) {
             pct = (_titlekey_count - common_titlekey_count) * 100 / file_tkey_count;
             if (pct > last_pct && pct <= 100) {
@@ -947,7 +961,7 @@ get_titlekeys:
     TPRINTFARGS("\n%kPersonalized... ", colors[(color_idx++) % 6]);
     gfx_printf("\n%k  Found %d titlekeys.\n", colors[(color_idx++) % 6], _titlekey_count);
 
-dismount:;
+dismount: ;
     if (save_process_success)
         save_free_contexts(save_ctx);
 
@@ -1068,9 +1082,11 @@ out_wait:
     emummc_load_cfg();
     // Ignore whether emummc is enabled.
     h_cfg.emummc_force_disable = emu_cfg.sector == 0 && !emu_cfg.path;
+    emu_cfg.enabled = !h_cfg.emummc_force_disable;
     emummc_storage_end(&emmc_storage);
-    gfx_printf("\n%kPress any key to return to the main menu.", colors[(color_idx) % 6], colors[(color_idx + 1) % 6], colors[(color_idx + 2) % 6]);
+    gfx_printf("\n%kPress a button to return to the menu.", colors[(color_idx) % 6], colors[(color_idx + 1) % 6], colors[(color_idx + 2) % 6]);
     btn_wait();
+    gfx_clear_grey(0x1B);
 }
 
 static void _save_key(const char *name, const void *data, u32 len, char *outbuf) {

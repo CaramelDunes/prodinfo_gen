@@ -49,6 +49,11 @@ LDFLAGS = $(ARCH) -nostartfiles -lgcc -Wl,--nmagic,--gc-sections -Xlinker --defs
 .PHONY: all clean
 
 all: $(OUTPUTDIR)/$(TARGET).bin
+	@echo -n "Payload size is "
+	$(eval BIN_SIZE = $(shell wc -c < $(OUTPUTDIR)/$(TARGET).bin))
+	@echo $(BIN_SIZE)
+	@echo "Max size is 126296 Bytes."
+	@if [ ${BIN_SIZE} -gt 126296 ]; then echo "\e[1;33mPayload size exceeds limit!\e[0m"; fi
 
 clean:
 	@rm -rf $(BUILDDIR)
@@ -57,11 +62,6 @@ clean:
 $(OUTPUTDIR)/$(TARGET).bin: $(BUILDDIR)/$(TARGET)/$(TARGET).elf
 	@mkdir -p "$(@D)"
 	$(OBJCOPY) -S -O binary $< $@
-	@echo -n "Payload size is "
-	$(eval BIN_SIZE = $(shell wc -c < $(OUTPUTDIR)/$(TARGET).bin))
-	@echo $(BIN_SIZE)
-	@echo "Max size is 126296 Bytes."
-	@if [ ${BIN_SIZE} -gt 126296 ]; then echo "\e[1;33mPayload size exceeds limit!\e[0m"; fi
 
 $(BUILDDIR)/$(TARGET)/$(TARGET).elf: $(OBJS)
 	$(CC) $(LDFLAGS) -T $(SOURCEDIR)/link.ld $^ -o $@
