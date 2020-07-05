@@ -365,10 +365,13 @@ void nx_emmc_bis_finalize()
 		return;
 
 	u32 limit = cache_filled == 1 ? MAX_CLUSTER_CACHE_ENTRIES : cluster_cache_end_index;
-	for (u32 i = 0; i < limit; i++)
+	u32 clusters_to_flush = dirty_cluster_count;
+	for (u32 i = 0; i < limit && clusters_to_flush; i++)
 	{
-		if (bis_cache->cluster_cache[i].dirty)
+		if (bis_cache->cluster_cache[i].dirty) {
 			_nx_emmc_bis_flush_cluster(&bis_cache->cluster_cache[i]);
+			clusters_to_flush--;
+		}
 	}
 }
 

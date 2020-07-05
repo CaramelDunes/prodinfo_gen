@@ -89,7 +89,7 @@ DRESULT disk_write (
 		return sdmmc_storage_write(&sd_storage, sector, count, (void *)buff) ? RES_OK : RES_ERROR;
 
 	case DRIVE_BIS:
-		return nx_emmc_bis_write(sector, count, buff);
+		return nx_emmc_bis_write(sector, count, (void *)buff);
 	}
 
 	return RES_ERROR;
