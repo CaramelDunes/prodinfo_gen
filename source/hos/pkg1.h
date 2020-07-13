@@ -33,6 +33,10 @@
 #define FS_SD_NCA_KEY_SOURCE         11
 #define FS_SD_SAVE_KEY_SOURCE        12
 
+#define PKG1_MAX_SIZE 0x40000
+#define PKG1_OFFSET 0x100000
+#define KEYBLOB_OFFSET 0x180000
+
 typedef struct _key_info_t
 {
 	u32 start_offset;

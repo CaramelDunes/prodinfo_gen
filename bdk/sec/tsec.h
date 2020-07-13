@@ -20,7 +20,7 @@
 
 #include <utils/types.h>
 
-#define TSEC_KEY_DATA_ADDR 0x300
+#define TSEC_KEY_DATA_OFFSET 0x300
 
 typedef struct _tsec_ctxt_t
 {
@@ -43,6 +43,7 @@ typedef struct _tsec_key_data_t
 	u32 blob2_size;
 	u32 blob3_size;
 	u32 blob4_size;
+	u8 reserved[0x7C];
 } tsec_key_data_t;
 
 int tsec_query(u8 *tsec_keys, u8 kb, tsec_ctxt_t *tsec_ctxt);
