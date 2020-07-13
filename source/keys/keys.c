@@ -25,7 +25,7 @@
 #include "../hos/pkg2.h"
 #include "../hos/sept.h"
 #include <libs/fatfs/ff.h>
-#include <libs/save/save.h>
+#include <libs/nx_savedata/save.h>
 #include <mem/heap.h>
 #include <mem/mc.h>
 #include <mem/minerva.h>
@@ -84,13 +84,24 @@ static void  _save_key(const char *name, const void *data, u32 len, char *outbuf
 static void  _save_key_family(const char *name, const void *data, u32 start_key, u32 num_keys, u32 len, char *outbuf);
 static void  _generate_kek(u32 ks, const void *key_source, void *master_key, const void *kek_seed, const void *key_seed);
 static void  _get_device_key(u32 ks, void *out_device_key, u32 revision, const void *device_key, const void *master_key);
-// nca functions
-static void *_nca_process(u32 tweak_ks, u32 crypt_ks, FIL *fp, u32 key_offset, u32 len, const u8 key_area_key[3][KB_FIRMWARE_VERSION_MAX+1][0x10]);
-static u32   _nca_fread_ctr(u32 ks, FIL *fp, void *buffer, u32 offset, u32 len, u8 *ctr);
-static void  _update_ctr(u8 *ctr, u32 ofs);
 // titlekey functions
 static bool  _test_key_pair(const void *E, const void *D, const void *N);
 static void  _mgf1_xor(void *masked, u32 masked_size, const void *seed, u32 seed_size);
+
+static inline const u8 *_find_tsec_fw(const u8 *pkg1) {
+    const u32 tsec_fw_align = 0x100;
+    const u32 tsec_fw_first_instruction = 0xCF42004D;
+
+    for (const u32 *pos = (const u32 *)pkg1; (u8 *)pos < pkg1 + PKG1_MAX_SIZE; pos += tsec_fw_align / sizeof(u32))
+        if (*pos == tsec_fw_first_instruction)
+            return (const u8 *)pos;
+
+    return NULL;
+}
+
+static inline u32 _get_tsec_fw_size(tsec_key_data_t *key_data) {
+    return 0x100 + key_data->blob0_size + key_data->blob1_size + key_data->blob2_size + key_data->blob3_size + key_data->blob4_size;
+}
 
 void dump_keys() {
     u8  temp_key[0x10],
@@ -99,14 +110,11 @@ void dump_keys() {
         device_key_4x[0x10] = {0},
         sd_seed[0x10] = {0},
         // FS-related keys
-        fs_keys[13][0x20] = {0},
         header_key[0x20] = {0},
         save_mac_key[0x10] = {0},
-        // other sysmodule sources
-        es_keys[3][0x10] = {0},
+        // other sysmodule keys
         eticket_rsa_kek[0x10] = {0},
         eticket_rsa_kek_personalized[0x10] = {0},
-        ssl_keys[0x10] = {0},
         ssl_rsa_kek[0x10] = {0},
         // keyblob-derived families
         keyblob[KB_FIRMWARE_VERSION_600+1][0x90] = {0},
@@ -147,12 +155,12 @@ void dump_keys() {
     TPRINTFARGS("%kMMC init...     ", colors[(color_idx++) % 6]);
 
     // Read package1.
-    u8 *pkg1 = (u8 *)malloc(0x40000);
+    u8 *pkg1 = (u8 *)malloc(PKG1_MAX_SIZE);
     if (!emummc_storage_set_mmc_partition(&emmc_storage, EMMC_BOOT0)) {
         EPRINTF("Unable to set partition.");
         goto out_wait;
     }
-    if (!emummc_storage_read(&emmc_storage, 0x100000 / NX_EMMC_BLOCKSIZE, 0x40000 / NX_EMMC_BLOCKSIZE, pkg1)) {
+    if (!emummc_storage_read(&emmc_storage, PKG1_OFFSET / NX_EMMC_BLOCKSIZE, PKG1_MAX_SIZE / NX_EMMC_BLOCKSIZE, pkg1)) {
         EPRINTF("Unable to read pkg1.");
         goto out_wait;
     }
@@ -162,31 +170,22 @@ void dump_keys() {
         goto out_wait;
     }
 
-    bool pkg1_not_100 = memcmp(pkg1_id->id, "2016", 4);
-
-    bool found_tsec_fw = false;
-    for (const u32 *pos = (const u32 *)pkg1; (u8 *)pos < pkg1 + 0x40000; pos += 0x100 / sizeof(u32)) {
-        if (*pos == 0xCF42004D) {
-            tsec_ctxt.fw = (u8 *)pos;
-            found_tsec_fw = true;
-            break;
-        }
-    }
-    if (!found_tsec_fw) {
+    tsec_ctxt.fw = _find_tsec_fw(pkg1);
+    if (!tsec_ctxt.fw) {
         EPRINTF("Unable to locate TSEC firmware.");
         goto out_wait;
     }
 
     minerva_periodic_training();
 
-    tsec_key_data_t *key_data = (tsec_key_data_t *)(tsec_ctxt.fw + TSEC_KEY_DATA_ADDR);
     tsec_ctxt.pkg1 = pkg1;
-    tsec_ctxt.size = 0x100 + key_data->blob0_size + key_data->blob1_size + key_data->blob2_size + key_data->blob3_size + key_data->blob4_size;
-
-    u32 MAX_KEY = 6;
-    if (pkg1_id->kb >= KB_FIRMWARE_VERSION_620) {
-        MAX_KEY = pkg1_id->kb + 1;
+    tsec_ctxt.size = _get_tsec_fw_size((tsec_key_data_t *)(tsec_ctxt.fw + TSEC_KEY_DATA_OFFSET));
+    if (tsec_ctxt.size > PKG1_MAX_SIZE) {
+        EPRINTF("Unexpected TSEC firmware size.");
+        goto out_wait;
     }
+
+    u32 max_derivable_key_index = pkg1_id->kb >= KB_FIRMWARE_VERSION_620 ? pkg1_id->kb + 1 : 6;
 
     if (pkg1_id->kb >= KB_FIRMWARE_VERSION_700) {
         sd_mount();
@@ -360,12 +359,10 @@ get_tsec: ;
         key_set(ks, wrapped_key), block_ecb(ks, 0, key, source) -> final key in key
     */
     minerva_periodic_training();
-    u32 key_generation = 0;
-    if (pkg1_id->kb >= KB_FIRMWARE_VERSION_500) {
-        key_generation = fuse_read_odm_keygen_rev();
-        if (key_generation)
-            key_generation--;
-    }
+    u32 key_generation = fuse_read_odm_keygen_rev();
+    if (key_generation)
+        key_generation--;
+
     if (_key_exists(device_key)) {
         if (key_generation) {
             _get_device_key(8, temp_key, key_generation, device_key_4x, master_key[0]);
@@ -384,127 +381,6 @@ get_tsec: ;
         memcpy(bis_key[3], bis_key[2], 0x20);
     }
 
-    // Dump package2.
-    u8 *pkg2 = NULL;
-    pkg2_kip1_info_t *ki = NULL;
-
-    if (!emummc_storage_set_mmc_partition(&emmc_storage, EMMC_GPP)) {
-        EPRINTF("Unable to set partition.");
-        goto out_wait;
-    }
-    // Parse eMMC GPT.
-    LIST_INIT(gpt);
-    nx_emmc_gpt_parse(&gpt, &emmc_storage);
-
-    // Find package2 partition.
-    emmc_part_t *pkg2_part = nx_emmc_part_find(&gpt, "BCPKG2-1-Normal-Main");
-    if (!pkg2_part) {
-        EPRINTF("Unable to locate Package2.");
-        goto pkg2_done;
-    }
-
-    // Read in package2 header and get package2 real size.
-    u8 *tmp = (u8 *)malloc(NX_EMMC_BLOCKSIZE);
-    nx_emmc_part_read(&emmc_storage, pkg2_part, 0x4000 / NX_EMMC_BLOCKSIZE, 1, tmp);
-    u32 *hdr_pkg2_raw = (u32 *)(tmp + 0x100);
-    u32 pkg2_size = hdr_pkg2_raw[0] ^ hdr_pkg2_raw[2] ^ hdr_pkg2_raw[3];
-    free(tmp);
-
-    if (pkg2_size > 0x7FC000) {
-        EPRINTF("Invalid Package2 header.");
-        goto pkg2_done;
-    }
-    // Read in package2.
-    u32 pkg2_size_aligned = ALIGN(pkg2_size, NX_EMMC_BLOCKSIZE);
-    pkg2 = malloc(pkg2_size_aligned);
-    nx_emmc_part_read(&emmc_storage, pkg2_part, 0x4000 / NX_EMMC_BLOCKSIZE, pkg2_size_aligned / NX_EMMC_BLOCKSIZE, pkg2);
-
-    // Decrypt package2 and parse KIP1 blobs in INI1 section. Try all available key generations in case of pkg1/pkg2 mismatch.
-    minerva_periodic_training();
-    pkg2_hdr_t *pkg2_hdr;
-    pkg2_hdr_t hdr;
-    u32 pkg2_kb;
-    for (pkg2_kb = 0; pkg2_kb < MAX_KEY; pkg2_kb++) {
-        se_aes_key_set(8, master_key[pkg2_kb], 0x10);
-        se_aes_unwrap_key(8, 8, package2_key_source);
-        memcpy(&hdr, pkg2 + 0x100, sizeof(pkg2_hdr_t));
-        se_aes_crypt_ctr(8, &hdr, sizeof(pkg2_hdr_t), &hdr, sizeof(pkg2_hdr_t), &hdr);
-        if (hdr.magic == PKG2_MAGIC)
-            break;
-    }
-    if (pkg2_kb == MAX_KEY) {
-        EPRINTF("Unable to derive Package2 key.");
-        goto pkg2_done;
-    } else if (pkg2_kb != pkg1_id->kb)
-        EPRINTFARGS("Warning! Package1-Package2 mismatch: %d, %d", pkg1_id->kb, pkg2_kb);
-
-    pkg2_hdr = pkg2_decrypt(pkg2);
-    if (!pkg2_hdr) {
-        EPRINTF("Unable to decrypt Package2.");
-        goto pkg2_done;
-    }
-
-    TPRINTFARGS("%kDecrypt pkg2... ", colors[(color_idx++) % 6]);
-
-    LIST_INIT(kip1_info);
-    bool new_pkg2;
-    if (!pkg2_parse_kips(&kip1_info, pkg2_hdr, &new_pkg2)) {
-        EPRINTF("Unable to locate INI1.");
-        goto pkg2_done;
-    }
-    LIST_FOREACH_ENTRY(pkg2_kip1_info_t, ki_tmp, &kip1_info, link) {
-        if(ki_tmp->kip1->tid == 0x0100000000000000ULL) {
-            ki = malloc(sizeof(pkg2_kip1_info_t));
-            memcpy(ki, ki_tmp, sizeof(pkg2_kip1_info_t));
-            break;
-        }
-    }
-    LIST_FOREACH_SAFE(iter, &kip1_info)
-        free(CONTAINER_OF(iter, pkg2_kip1_info_t, link));
-
-    if (!ki) {
-        EPRINTF("Unable to parse INI1.");
-        goto pkg2_done;
-    }
-
-    pkg2_decompress_kip(ki, 2 | 4); // we only need .rodata and .data
-    TPRINTFARGS("%kDecompress FS...", colors[(color_idx++) % 6]);
-
-    u8 hash_index = 0;
-    const u8 key_lengths[13] = {0x10, 0x20, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x20, 0x10, 0x20, 0x20};
-
-    if (!pkg1_not_100) {
-        // 1.0.0 doesn't have SD keys at all and the first key isn't aligned with the rest
-        memcpy(fs_keys[FS_KEY_AREA_KEY_APPLI_SOURCE], ki->kip1->data + ki->kip1->sections[0].size_comp + 0x1ae0e, 0x10);
-        hash_index = 1;
-    }
-
-    u8 temp_hash[0x20];
-    for (u32 i = ki->kip1->sections[0].size_comp + pkg1_id->key_info.start_offset; i < ki->size - 0x20; ) {
-        minerva_periodic_training();
-        se_calc_sha256(temp_hash, ki->kip1->data + i, key_lengths[pkg1_id->key_info.hash_order[hash_index]]);
-        if (!memcmp(temp_hash, fs_hashes_sha256[pkg1_id->key_info.hash_order[hash_index]], 0x20)) {
-            memcpy(fs_keys[pkg1_id->key_info.hash_order[hash_index]], ki->kip1->data + i, key_lengths[pkg1_id->key_info.hash_order[hash_index]]);
-            i += key_lengths[pkg1_id->key_info.hash_order[hash_index]];
-            if (hash_index == pkg1_id->key_info.hash_max - 1) {
-                if (pkg1_id->key_info.hks_offset_is_from_end)
-                    i = ki->size - pkg1_id->key_info.hks_offset;
-                else
-                    i = ki->size - (ki->kip1->sections[2].size_decomp - pkg1_id->key_info.hks_offset);
-            } else if (hash_index == pkg1_id->key_info.hash_max) {
-                break;
-            }
-            hash_index++;
-        } else {
-            i += pkg1_id->key_info.alignment;
-        }
-    }
-pkg2_done:
-    if (ki) {
-        free(ki);
-    }
-    free(pkg2);
-
     u8 *rights_ids = NULL, *titlekeys = NULL;
 
     TPRINTFARGS("%kFS keys...      ", colors[(color_idx++) % 6]);
@@ -520,10 +396,10 @@ pkg2_done:
         se_aes_crypt_block_ecb(8, 0, save_mac_key, fs_keys[FS_SAVE_MAC_KEY_SOURCE]);
     }
 
-    if (_key_exists(master_key[MAX_KEY])) {
-        MAX_KEY = KB_FIRMWARE_VERSION_MAX + 1;
+    if (_key_exists(master_key[max_derivable_key_index])) {
+        max_derivable_key_index = KB_FIRMWARE_VERSION_MAX + 1;
     }
-    for (u32 i = 0; i < MAX_KEY; i++) {
+    for (u32 i = 0; i < max_derivable_key_index; i++) {
         if (!_key_exists(master_key[i]))
             continue;
         if (_key_exists(fs_keys[FS_KEY_AREA_KEY_APPLI_SOURCE]) && _key_exists(fs_keys[FS_KEY_AREA_KEY_OCEAN_SOURCE]) && _key_exists(fs_keys[FS_KEY_AREA_KEY_SYSTE_SOURCE])) {
@@ -543,6 +419,25 @@ pkg2_done:
         goto key_output;
     }
 
+    FILINFO fno;
+    FIL fp;
+    save_ctx_t *save_ctx = NULL;
+    bool save_process_success = false;
+    u32 read_bytes = 0;
+
+    // derive eticket_rsa_kek and ssl_rsa_kek
+    if (_key_exists(master_key[0])) {
+        for (u32 i = 0; i < 0x10; i++)
+            temp_key[i] = aes_kek_generation_source[i] ^ aes_kek_seed_03[i];
+        _generate_kek(7, es_keys[1], master_key[0], temp_key, NULL);
+        se_aes_crypt_block_ecb(7, 0, eticket_rsa_kek, es_keys[0]);
+
+        for (u32 i = 0; i < 0x10; i++)
+            temp_key[i] = aes_kek_generation_source[i] ^ aes_kek_seed_01[i];
+        _generate_kek(7, es_keys[2], master_key[0], temp_key, NULL);
+        se_aes_crypt_block_ecb(7, 0, ssl_rsa_kek, ssl_keys);
+    }
+
     // Set BIS keys.
     // PRODINFO/PRODINFOF
     se_aes_key_set(0, bis_key[0] + 0x00, 0x10);
@@ -558,6 +453,14 @@ pkg2_done:
     se_aes_key_set(8, header_key + 0x00, 0x10);
     se_aes_key_set(9, header_key + 0x10, 0x10);
 
+    if (!emummc_storage_set_mmc_partition(&emmc_storage, EMMC_GPP)) {
+        EPRINTF("Unable to set partition.");
+        goto out_wait;
+    }
+    // Parse eMMC GPT.
+    LIST_INIT(gpt);
+    nx_emmc_gpt_parse(&gpt, &emmc_storage);
+
     emmc_part_t *system_part = nx_emmc_part_find(&gpt, "SYSTEM");
     if (!system_part) {
         EPRINTF("Unable to locate System partition.");
@@ -570,120 +473,6 @@ pkg2_done:
         EPRINTF("Unable to mount system partition.");
         goto key_output;
     }
-
-    DIR dir;
-    FILINFO fno;
-    FIL fp;
-    save_ctx_t *save_ctx = NULL;
-    bool save_process_success = false;
-
-    // sysmodule NCAs only ever have one section (exefs) so 0x600 is sufficient
-    u8 *dec_header = (u8*)malloc(0x600);
-    char path[100] = "bis:/Contents/registered";
-    u32 titles_found = 0, read_bytes = 0, title_limit = pkg1_not_100 ? 2 : 1;
-    u8 *temp_file = NULL;
-
-    if (f_opendir(&dir, path)) {
-        EPRINTF("Unable to open System:/Contents/registered.");
-        goto dismount;
-    }
-
-    gfx_printf("%kSector cache... ", colors[(color_idx++) % 6]);
-    // prepopulate /Contents/registered in decrypted sector cache
-    while (!f_readdir(&dir, &fno) && fno.fname[0]) {}
-    f_closedir(&dir);
-    TPRINTF();
-
-    if (pkg1_not_100) {
-        gfx_printf("%kES & SSL keys...", colors[(color_idx++) % 6]);
-    } else {
-        gfx_printf("%kSSL keys...     ", colors[(color_idx++) % 6]);
-    }
-
-    if (f_opendir(&dir, path)) {
-        EPRINTF("Unable to open System:/Contents/registered.");
-        goto dismount;
-    }
-
-    path[24] = '/';
-    while (!f_readdir(&dir, &fno) && fno.fname[0] && titles_found < title_limit) {
-        minerva_periodic_training();
-        memcpy(path + 25, fno.fname, 36);
-        path[61] = 0;
-        if (fno.fattrib & AM_DIR)
-            memcpy(path + 61, "/00", 4);
-        if (f_open(&fp, path, FA_READ | FA_OPEN_EXISTING)) continue;
-        if (f_lseek(&fp, 0x200) || f_read(&fp, dec_header, 0x20, &read_bytes) || read_bytes != 0x20) {
-            f_close(&fp);
-            continue;
-        }
-        se_aes_xts_crypt_sec(9, 8, 0, 1, dec_header + 0x200, dec_header, 0x20);
-        // es doesn't contain es key sources on 1.0.0
-        if (pkg1_not_100 && _read_le_u32(dec_header, 0x210) == 0x33 && dec_header[0x205] == 0) {
-            u8 hash_order[3] = {0, 1, 2};
-            if (pkg1_id->kb >= KB_FIRMWARE_VERSION_500) {
-                hash_order[0] = 1;
-                hash_order[1] = 0;
-            }
-            hash_index = 0;
-            // decrypt only what is needed to locate needed keys
-            temp_file = (u8*)_nca_process(9, 8, &fp, pkg1_id->key_info.es_offset, 0xc0, key_area_key);
-            for (u32 i = 0; i <= 0xb0; ) {
-                se_calc_sha256(temp_hash, temp_file + i, 0x10);
-                if (!memcmp(temp_hash, es_hashes_sha256[hash_order[hash_index]], 0x10)) {
-                    memcpy(es_keys[hash_order[hash_index]], temp_file + i, 0x10);
-                    hash_index++;
-                    if (hash_index == 3)
-                        break;
-                    i += 0x10;
-                } else {
-                    i++;
-                }
-            }
-            free(temp_file);
-            temp_file = NULL;
-            titles_found++;
-        } else if (_read_le_u32(dec_header, 0x210) == 0x24 && dec_header[0x205] == 0) {
-            temp_file = (u8*)_nca_process(9, 8, &fp, pkg1_id->key_info.ssl_offset, 0x70, key_area_key);
-            for (u32 i = 0; i <= 0x60; i++) {
-                se_calc_sha256(temp_hash, temp_file + i, 0x10);
-                if (!memcmp(temp_hash, ssl_hashes_sha256[1], 0x10)) {
-                    memcpy(ssl_keys, temp_file + i, 0x10);
-                    // only get ssl_rsa_kek_source_x from SSL on 1.0.0
-                    // we get it from ES on every other firmware
-                    // and it's located oddly distant from ssl_rsa_kek_source_y on >= 6.0.0
-                    if (!pkg1_not_100) {
-                        se_calc_sha256(temp_hash, temp_file + i + 0x10, 0x10);
-                        if (!memcmp(temp_hash, ssl_hashes_sha256[0], 0x10))
-                            memcpy(es_keys[2], temp_file + i + 0x10, 0x10);
-                    }
-                    break;
-                }
-            }
-            free(temp_file);
-            temp_file = NULL;
-            titles_found++;
-        }
-        f_close(&fp);
-    }
-    f_closedir(&dir);
-    free(dec_header);
-
-    // derive eticket_rsa_kek and ssl_rsa_kek
-    if (_key_exists(es_keys[0]) && _key_exists(es_keys[1]) && _key_exists(master_key[0])) {
-        for (u32 i = 0; i < 0x10; i++)
-            temp_key[i] = aes_kek_generation_source[i] ^ aes_kek_seed_03[i];
-        _generate_kek(7, es_keys[1], master_key[0], temp_key, NULL);
-        se_aes_crypt_block_ecb(7, 0, eticket_rsa_kek, es_keys[0]);
-    }
-    if (_key_exists(ssl_keys) && _key_exists(es_keys[2]) && _key_exists(master_key[0])) {
-        for (u32 i = 0; i < 0x10; i++)
-            temp_key[i] = aes_kek_generation_source[i] ^ aes_kek_seed_01[i];
-        _generate_kek(7, es_keys[2], master_key[0], temp_key, NULL);
-        se_aes_crypt_block_ecb(7, 0, ssl_rsa_kek, ssl_keys);
-    }
-
-    TPRINTF();
 
     char private_path[200] = "sd:/";
     if (emu_cfg.nintendo_path && (emu_cfg.enabled || !h_cfg.emummc_force_disable)) {
@@ -735,7 +524,7 @@ get_titlekeys:
         0xE3, 0xB0, 0xC4, 0x42, 0x98, 0xFC, 0x1C, 0x14, 0x9A, 0xFB, 0xF4, 0xC8, 0x99, 0x6F, 0xB9, 0x24,
         0x27, 0xAE, 0x41, 0xE4, 0x64, 0x9B, 0x93, 0x4C, 0xA4, 0x95, 0x99, 0x1B, 0x78, 0x52, 0xB8, 0x55};
 
-    u32 buf_size = 0x40000;
+    u32 buf_size = 0x4000;
     u8 *buffer = (u8 *)MIXD_BUF_ALIGNED;
 
     u8 keypair[0x230] = {0};
@@ -824,14 +613,17 @@ get_titlekeys:
         goto dismount;
     }
 
-    while (br == buf_size && offset < ticket_file.size) {
-        if (!save_data_file_read(&ticket_file, &br, offset, buffer, buf_size) || buffer[0] == 0)
+    bool terminator_reached = false;
+    while (offset < ticket_file.size && !terminator_reached) {
+        if (!save_data_file_read(&ticket_file, &br, offset, buffer, buf_size) || buffer[0] == 0 || br != buf_size)
             break;
         offset += br;
         minerva_periodic_training();
         for (u32 j = 0; j < buf_size; j += 0x20) {
-            if (buffer[j] == 0xff && buffer[j+1] == 0xff && buffer[j+2] == 0xff && buffer[j+3] == 0xff)
+            if (buffer[j] == 0xff && buffer[j+1] == 0xff && buffer[j+2] == 0xff && buffer[j+3] == 0xff) {
+                terminator_reached = true;
                 break;
+            }
             file_tkey_count++;
         }
     }
@@ -843,10 +635,9 @@ get_titlekeys:
     }
 
     offset = 0;
-    br = buf_size;
-
-    while (br == buf_size && offset < ticket_file.size) {
-        if (!save_data_file_read(&ticket_file, &br, offset, buffer, buf_size) || buffer[0] == 0)
+    terminator_reached = false;
+    while (offset < ticket_file.size && !terminator_reached) {
+        if (!save_data_file_read(&ticket_file, &br, offset, buffer, buf_size) || buffer[0] == 0 || br != buf_size)
             break;
         offset += br;
         for (u32 j = 0; j < buf_size; j += 0x400) {
@@ -861,6 +652,7 @@ get_titlekeys:
                 memcpy(titlekeys + 0x10 * _titlekey_count, buffer + j + 0x180, 0x10);
                 _titlekey_count++;
             } else {
+                terminator_reached = true;
                 break;
             }
         }
@@ -902,15 +694,17 @@ get_titlekeys:
 
     offset = 0;
     file_tkey_count = 0;
-    br = buf_size;
-    while (br == buf_size && offset < ticket_file.size) {
-        if (!save_data_file_read(&ticket_file, &br, offset, buffer, buf_size) || buffer[0] == 0)
+    terminator_reached = false;
+    while (offset < ticket_file.size && !terminator_reached) {
+        if (!save_data_file_read(&ticket_file, &br, offset, buffer, buf_size) || buffer[0] == 0 || br != buf_size)
             break;
         offset += br;
         minerva_periodic_training();
         for (u32 j = 0; j < buf_size; j += 0x20) {
-            if (buffer[j] == 0xff && buffer[j+1] == 0xff && buffer[j+2] == 0xff && buffer[j+3] == 0xff)
+            if (buffer[j] == 0xff && buffer[j+1] == 0xff && buffer[j+2] == 0xff && buffer[j+3] == 0xff) {
+                terminator_reached = true;
                 break;
+            }
             file_tkey_count++;
         }
     }
@@ -924,9 +718,9 @@ get_titlekeys:
     offset = 0;
     pct = 0;
     last_pct = 0;
-    br = buf_size;
-    while (br == buf_size && offset < ticket_file.size) {
-        if (!save_data_file_read(&ticket_file, &br, offset, buffer, buf_size) || buffer[0] == 0)
+    terminator_reached = false;
+    while (offset < ticket_file.size && !terminator_reached) {
+        if (!save_data_file_read(&ticket_file, &br, offset, buffer, buf_size) || buffer[0] == 0 || br != buf_size)
             break;
         offset += br;
         for (u32 j = 0; j < buf_size; j += 0x400) {
@@ -950,6 +744,7 @@ get_titlekeys:
                 memcpy(titlekeys + 0x10 * _titlekey_count, db + 0xcf, 0x10);
                 _titlekey_count++;
             } else {
+                terminator_reached = true;
                 break;
             }
         }
@@ -994,23 +789,23 @@ key_output: ;
     SAVE_KEY("header_kek_source", fs_keys[FS_HEADER_KEK_SOURCE], 0x10);
     SAVE_KEY("header_key", header_key, 0x20);
     SAVE_KEY("header_key_source", fs_keys[FS_HEADER_KEY_SOURCE], 0x20);
-    SAVE_KEY_FAMILY("key_area_key_application", key_area_key[0], 0, MAX_KEY, 0x10);
+    SAVE_KEY_FAMILY("key_area_key_application", key_area_key[0], 0, max_derivable_key_index, 0x10);
     SAVE_KEY("key_area_key_application_source", fs_keys[FS_KEY_AREA_KEY_APPLI_SOURCE], 0x10);
-    SAVE_KEY_FAMILY("key_area_key_ocean", key_area_key[1], 0, MAX_KEY, 0x10);
+    SAVE_KEY_FAMILY("key_area_key_ocean", key_area_key[1], 0, max_derivable_key_index, 0x10);
     SAVE_KEY("key_area_key_ocean_source", fs_keys[FS_KEY_AREA_KEY_OCEAN_SOURCE], 0x10);
-    SAVE_KEY_FAMILY("key_area_key_system", key_area_key[2], 0, MAX_KEY, 0x10);
+    SAVE_KEY_FAMILY("key_area_key_system", key_area_key[2], 0, max_derivable_key_index, 0x10);
     SAVE_KEY("key_area_key_system_source", fs_keys[FS_KEY_AREA_KEY_SYSTE_SOURCE], 0x10);
     SAVE_KEY_FAMILY("keyblob", keyblob, 0, 6, 0x90);
     SAVE_KEY_FAMILY("keyblob_key", keyblob_key, 0, 6, 0x10);
     SAVE_KEY_FAMILY("keyblob_key_source", keyblob_key_source, 0, 6, 0x10);
     SAVE_KEY_FAMILY("keyblob_mac_key", keyblob_mac_key, 0, 6, 0x10);
     SAVE_KEY("keyblob_mac_key_source", keyblob_mac_key_source, 0x10);
-    SAVE_KEY_FAMILY("master_kek", master_kek, 0, MAX_KEY, 0x10);
+    SAVE_KEY_FAMILY("master_kek", master_kek, 0, max_derivable_key_index, 0x10);
     SAVE_KEY_FAMILY("master_kek_source", master_kek_sources, KB_FIRMWARE_VERSION_620, sizeof(master_kek_sources) / 0x10, 0x10);
-    SAVE_KEY_FAMILY("master_key", master_key, 0, MAX_KEY, 0x10);
+    SAVE_KEY_FAMILY("master_key", master_key, 0, max_derivable_key_index, 0x10);
     SAVE_KEY("master_key_source", master_key_source, 0x10);
     SAVE_KEY_FAMILY("package1_key", package1_key, 0, 6, 0x10);
-    SAVE_KEY_FAMILY("package2_key", package2_key, 0, MAX_KEY, 0x10);
+    SAVE_KEY_FAMILY("package2_key", package2_key, 0, max_derivable_key_index, 0x10);
     SAVE_KEY("package2_key_source", package2_key_source, 0x10);
     SAVE_KEY("per_console_key_source", per_console_key_source, 0x10);
     SAVE_KEY("retail_specific_aes_key_source", retail_specific_aes_key_source, 0x10);
@@ -1034,7 +829,7 @@ key_output: ;
     SAVE_KEY("ssl_rsa_kek", ssl_rsa_kek, 0x10);
     SAVE_KEY("ssl_rsa_kek_source_x", es_keys[2], 0x10);
     SAVE_KEY("ssl_rsa_kek_source_y", ssl_keys, 0x10);
-    SAVE_KEY_FAMILY("titlekek", titlekek, 0, MAX_KEY, 0x10);
+    SAVE_KEY_FAMILY("titlekek", titlekek, 0, max_derivable_key_index, 0x10);
     SAVE_KEY("titlekek_source", titlekek_source, 0x10);
     SAVE_KEY("tsec_key", tsec_keys, 0x10);
     if (pkg1_id->kb == KB_FIRMWARE_VERSION_620)
@@ -1045,7 +840,7 @@ key_output: ;
     end_time = get_tmr_us();
     gfx_printf("\n%k  Found %d keys.\n\n", colors[(color_idx++) % 6], _key_count);
     gfx_printf("%kLockpick totally done in %d us\n\n", colors[(color_idx++) % 6], end_time - begin_time);
-    gfx_printf("%kFound through master_key_%02x.\n\n", colors[(color_idx++) % 6], MAX_KEY - 1);
+    gfx_printf("%kFound through master_key_%02x.\n\n", colors[(color_idx++) % 6], max_derivable_key_index - 1);
 
     f_mkdir("sd:/switch");
     char keyfile_path[30] = "sd:/switch/";
@@ -1130,67 +925,6 @@ static void _get_device_key(u32 ks, void *out_device_key, u32 revision, const vo
     se_aes_key_set(ks, master_key, 0x10);
     se_aes_unwrap_key(ks, ks, new_device_keygen_sources[revision]);
     se_aes_crypt_ecb(ks, 0, out_device_key, 0x10, temp_key, 0x10);
-}
-
-static void *_nca_process(u32 tweak_ks, u32 crypt_ks, FIL *fp, u32 key_offset, u32 len, const u8 key_area_key[3][KB_FIRMWARE_VERSION_MAX+1][0x10]) {
-    u32 read_bytes = 0, crypt_offset, read_size, num_files, string_table_size, rodata_offset;
-
-    u8 *temp_file = (u8*)malloc(0x400),
-        ctr[0x10] = {0};
-    if (f_lseek(fp, 0x200) || f_read(fp, temp_file, 0x400, &read_bytes) || read_bytes != 0x400) {
-        free(temp_file);
-        return NULL;
-    }
-    se_aes_xts_crypt(tweak_ks, crypt_ks, 0, 1, temp_file, temp_file, 0x200, 2);
-    // both 1.x and 2.x use master_key_00
-    temp_file[0x20] -= temp_file[0x20] ? 1 : 0;
-    // decrypt key area and load decrypted key area key
-    se_aes_key_set(7, key_area_key[temp_file[7]][temp_file[0x20]], 0x10);
-    se_aes_crypt_block_ecb(7, 0, temp_file + 0x120, temp_file + 0x120);
-    se_aes_key_set(6, temp_file + 0x120, 0x10);
-    for (u32 i = 0; i < 8; i++)
-        ctr[i] = temp_file[0x347 - i];
-    crypt_offset = _read_le_u32(temp_file, 0x40) * 0x200 + _read_le_u32(temp_file, 0x240);
-    read_size = 0x10;
-    _nca_fread_ctr(6, fp, temp_file, crypt_offset, read_size, ctr);
-    num_files = _read_le_u32(temp_file, 4);
-    string_table_size = _read_le_u32(temp_file, 8);
-    if (!memcmp(temp_file + 0x10 + num_files * 0x18, "main.npdm", 9))
-        crypt_offset += _read_le_u32(temp_file, 0x18);
-    crypt_offset += 0x10 + num_files * 0x18 + string_table_size;
-    read_size = 0x40;
-    _nca_fread_ctr(6, fp, temp_file, crypt_offset, read_size, ctr);
-    rodata_offset = _read_le_u32(temp_file, 0x20);
-
-    void *buf = malloc(len);
-    _nca_fread_ctr(6, fp, buf, crypt_offset + rodata_offset + key_offset, len, ctr);
-    free(temp_file);
-
-    return buf;
-}
-
-static u32 _nca_fread_ctr(u32 ks, FIL *fp, void *buffer, u32 offset, u32 len, u8 *ctr) {
-    u32 br;
-    if (f_lseek(fp, offset) || f_read(fp, buffer, len, &br) || br != len)
-        return 0;
-    _update_ctr(ctr, offset);
-
-    if (offset % 0x10) {
-        u8 *temp = (u8*)malloc(ALIGN(br + offset % 0x10, 0x10));
-        memcpy(temp + offset % 0x10, buffer, br);
-        se_aes_crypt_ctr(ks, temp, ALIGN(br + offset % 0x10, 0x10), temp, ALIGN(br + offset % 0x10, 0x10), ctr);
-        memcpy(buffer, temp + offset % 0x10, br);
-        free(temp);
-        return br;
-    }
-    se_aes_crypt_ctr(ks, buffer, br, buffer, br, ctr);
-    return br;
-}
-
-static void _update_ctr(u8 *ctr, u32 ofs) {
-    ofs >>= 4;
-    for (u32 i = 0; i < 4; i++, ofs >>= 8)
-        ctr[0x10-i-1] = (u8)(ofs & 0xff);
 }
 
 static bool _test_key_pair(const void *E, const void *D, const void *N) {
