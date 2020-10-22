@@ -31,7 +31,6 @@
 #include "rtc/max77620-rtc.h"
 #include "soc/bpmp.h"
 #include "soc/hw_init.h"
-#include "storage/emummc.h"
 #include "storage/nx_emmc.h"
 #include "storage/nx_sd.h"
 #include "storage/sdmmc.h"
@@ -40,23 +39,26 @@
 #include "utils/sprintf.h"
 #include "utils/util.h"
 
-#include "keys/keys.h"
+#include "cal0/cal0_donor.h"
+#include "cal0/cal0_scratch.h"
 
 hekate_config h_cfg;
-boot_cfg_t __attribute__((section ("._boot_cfg"))) b_cfg;
+boot_cfg_t __attribute__((section("._boot_cfg"))) b_cfg;
 
 volatile nyx_storage_t *nyx_str = (nyx_storage_t *)NYX_STORAGE_ADDR;
+sdmmc_storage_t storage;
+emmc_part_t *system_part;
 
 // This is a safe and unused DRAM region for our payloads.
-#define RELOC_META_OFF      0x7C
-#define PATCHED_RELOC_SZ    0x94
+#define RELOC_META_OFF 0x7C
+#define PATCHED_RELOC_SZ 0x94
 #define PATCHED_RELOC_STACK 0x40007000
 #define PATCHED_RELOC_ENTRY 0x40010000
-#define EXT_PAYLOAD_ADDR    0xC0000000
-#define RCM_PAYLOAD_ADDR    (EXT_PAYLOAD_ADDR + ALIGN(PATCHED_RELOC_SZ, 0x10))
-#define COREBOOT_END_ADDR   0xD0000000
-#define CBFS_DRAM_EN_ADDR   0x4003e000
-#define  CBFS_DRAM_MAGIC    0x4452414D // "DRAM"
+#define EXT_PAYLOAD_ADDR 0xC0000000
+#define RCM_PAYLOAD_ADDR (EXT_PAYLOAD_ADDR + ALIGN(PATCHED_RELOC_SZ, 0x10))
+#define COREBOOT_END_ADDR 0xD0000000
+#define CBFS_DRAM_EN_ADDR 0x4003e000
+#define CBFS_DRAM_MAGIC 0x4452414D // "DRAM"
 
 static void *coreboot_addr;
 
@@ -68,8 +70,8 @@ void reloc_patcher(u32 payload_dst, u32 payload_src, u32 payload_size)
 
 	relocator->start = payload_dst - ALIGN(PATCHED_RELOC_SZ, 0x10);
 	relocator->stack = PATCHED_RELOC_STACK;
-	relocator->end   = payload_dst + payload_size;
-	relocator->ep    = payload_dst;
+	relocator->end = payload_dst + payload_size;
+	relocator->ep = payload_dst;
 
 	if (payload_size == 0x7000)
 	{
@@ -210,7 +212,7 @@ void launch_tools()
 		if (i > 0)
 		{
 			memset(&ments[i + i_off], 0, sizeof(ment_t));
-			menu_t menu = { ments, "Choose a file to launch", 0, 0 };
+			menu_t menu = {ments, "Choose a file to launch", 0, 0};
 
 			file_sec = (char *)tui_do_menu(&menu);
 
@@ -259,68 +261,18 @@ out:
 	btn_wait();
 }
 
-void dump_sysnand()
-{
-	h_cfg.emummc_force_disable = true;
-	b_cfg.extra_cfg &= ~EXTRA_CFG_DUMP_EMUMMC;
-	dump_keys();
-}
-
-void dump_emunand()
-{
-	if (h_cfg.emummc_force_disable)
-		return;
-	emu_cfg.enabled = 1;
-	b_cfg.extra_cfg |= EXTRA_CFG_DUMP_EMUMMC;
-	dump_keys();
-}
-
 ment_t ment_top[] = {
-	MDEF_HANDLER("Dump from SysNAND | Key generation: unk", dump_sysnand, COLOR_RED),
-	MDEF_HANDLER("Dump from EmuNAND | Key generation: unk", dump_emunand, COLOR_ORANGE),
+	MDEF_HANDLER("Build PRODINFO file from donor", build_cal0_donor, COLOR_RED),
+	MDEF_HANDLER("Build PRODINFO file from scratch", build_cal0_scratch, COLOR_ORANGE),
 	MDEF_CAPTION("---------------", COLOR_YELLOW),
 	MDEF_HANDLER("Payloads...", launch_tools, COLOR_GREEN),
 	MDEF_CAPTION("---------------", COLOR_BLUE),
 	MDEF_HANDLER("Reboot (Normal)", reboot_normal, COLOR_VIOLET),
 	MDEF_HANDLER("Reboot (RCM)", reboot_rcm, COLOR_RED),
 	MDEF_HANDLER("Power off", power_off, COLOR_ORANGE),
-	MDEF_END()
-};
+	MDEF_END()};
 
-menu_t menu_top = { ment_top, NULL, 0, 0 };
-
-void _get_key_generations(char *sysnand_label, char *emunand_label)
-{
-	sdmmc_t sdmmc;
-	sdmmc_storage_t storage;
-	sdmmc_storage_init_mmc(&storage, &sdmmc, SDMMC_BUS_WIDTH_8, SDHCI_TIMING_MMC_HS400);
-	u8 *pkg1 = (u8 *)malloc(NX_EMMC_BLOCKSIZE);
-	sdmmc_storage_set_mmc_partition(&storage, EMMC_BOOT0);
-	sdmmc_storage_read(&storage, 0x100000 / NX_EMMC_BLOCKSIZE, 1, pkg1);
-	const pkg1_id_t *pkg1_id = pkg1_identify(pkg1);
-	sdmmc_storage_end(&storage);
-
-	if (pkg1_id)
-		sprintf(sysnand_label + 36, "% 3d", pkg1_id->kb);
-	ment_top[0].caption = sysnand_label;
-	if (h_cfg.emummc_force_disable)
-	{
-		free(pkg1);
-		return;
-	}
-
-	emummc_storage_init_mmc(&storage, &sdmmc);
-	memset(pkg1, 0, NX_EMMC_BLOCKSIZE);
-	emummc_storage_set_mmc_partition(&storage, EMMC_BOOT0);
-	emummc_storage_read(&storage, 0x100000 / NX_EMMC_BLOCKSIZE, 1, pkg1);
-	pkg1_id = pkg1_identify(pkg1);
-	emummc_storage_end(&storage);
-
-	if (pkg1_id)
-		sprintf(emunand_label + 36, "% 3d", pkg1_id->kb);
-	free(pkg1);
-	ment_top[1].caption = emunand_label;
-}
+menu_t menu_top = {ment_top, NULL, 0, 0};
 
 extern void pivot_stack(u32 stack_top);
 
@@ -354,24 +306,6 @@ void ipl_main()
 
 	// Overclock BPMP.
 	bpmp_clk_rate_set(BPMP_CLK_DEFAULT_BOOST);
-
-	h_cfg.emummc_force_disable = emummc_load_cfg();
-
-	if (b_cfg.boot_cfg & BOOT_CFG_SEPT_RUN)
-	{
-		if (!(b_cfg.extra_cfg & EXTRA_CFG_DUMP_EMUMMC))
-			h_cfg.emummc_force_disable = true;
-		dump_keys();
-	}
-
-	if (h_cfg.emummc_force_disable)
-	{
-		ment_top[1].type = MENT_CAPTION;
-		ment_top[1].color = 0xFF555555;
-		ment_top[1].handler = NULL;
-	}
-
-	_get_key_generations((char *)ment_top[0].caption, (char *)ment_top[1].caption);
 
 	while (true)
 		tui_do_menu(&menu_top);

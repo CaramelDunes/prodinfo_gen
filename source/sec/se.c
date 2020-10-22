@@ -145,7 +145,7 @@ static int _se_execute_one_block(u32 op, void *dst, u32 dst_size, const void *sr
 	return res;
 }
 
-static void _se_aes_ctr_set(void *ctr)
+static void _se_aes_ctr_set(const void *ctr)
 {
 	u32 *data = (u32 *)ctr;
 	for (u32 i = 0; i < 4; i++)
@@ -314,7 +314,7 @@ int se_aes_crypt_block_ecb(u32 ks, u32 enc, void *dst, const void *src)
 	return se_aes_crypt_ecb(ks, enc, dst, 0x10, src, 0x10);
 }
 
-int se_aes_crypt_ctr(u32 ks, void *dst, u32 dst_size, const void *src, u32 src_size, void *ctr)
+int se_aes_crypt_ctr(u32 ks, void *dst, u32 dst_size, const void *src, u32 src_size, const void *ctr)
 {
 	SE(SE_SPARE_0_REG_OFFSET) = 1;
 	SE(SE_CONFIG_REG_OFFSET) = SE_CONFIG_ENC_ALG(ALG_AES_ENC) | SE_CONFIG_DST(DST_MEMORY);

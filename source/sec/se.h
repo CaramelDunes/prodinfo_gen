@@ -35,7 +35,7 @@ int se_generate_random_key(u32 ks_dst, u32 ks_src);
 int se_aes_unwrap_key(u32 ks_dst, u32 ks_src, const void *input);
 int se_aes_crypt_ecb(u32 ks, u32 enc, void *dst, u32 dst_size, const void *src, u32 src_size);
 int se_aes_crypt_block_ecb(u32 ks, u32 enc, void *dst, const void *src);
-int se_aes_crypt_ctr(u32 ks, void *dst, u32 dst_size, const void *src, u32 src_size, void *ctr);
+int se_aes_crypt_ctr(u32 ks, void *dst, u32 dst_size, const void *src, u32 src_size, const void *ctr);
 int se_aes_crypt_cbc(u32 ks, u32 enc, void *dst, u32 dst_size, const void *src, u32 src_size);
 int se_aes_xts_crypt_sec(u32 ks1, u32 ks2, u32 enc, u64 sec, void *dst, const void *src, u32 secsize);
 int se_aes_xts_crypt(u32 ks1, u32 ks2, u32 enc, u64 sec, void *dst, const void *src, u32 secsize, u32 num_secs);

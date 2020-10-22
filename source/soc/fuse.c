@@ -43,7 +43,7 @@ static const u32 evp_thunk_template[] = {
 	0x001007b0, // off_1007EC DCD evp_thunk_template
 	0x001007f8, // off_1007F0 DCD thunk_end
 	0x40004c30, // off_1007F4 DCD iram_evp_thunks
-	// thunk_end is here
+				// thunk_end is here
 };
 static const u32 evp_thunk_template_len = sizeof(evp_thunk_template);
 
@@ -321,7 +321,7 @@ int fuse_read_evp_thunk(u32 *iram_evp_thunks, u32 *iram_evp_thunks_len)
 bool fuse_check_patched_rcm()
 {
 	// Check if XUSB in use.
-	if (FUSE(FUSE_RESERVED_SW) & (1<<7))
+	if (FUSE(FUSE_RESERVED_SW) & (1 << 7))
 		return true;
 
 	// Check if RCM is ipatched.
@@ -346,4 +346,29 @@ bool fuse_check_patched_rcm()
 	}
 
 	return false;
+}
+
+u64 fuse_get_device_id()
+{
+	u64 device_id = 0;
+	u64 y_coord = FUSE(FUSE_OPT_Y_COORDINATE) & 0x1FF;
+	u64 x_coord = FUSE(FUSE_OPT_X_COORDINATE) & 0x1FF;
+	u64 wafer_id = FUSE(FUSE_OPT_WAFER_ID) & 0x3F;
+	u64 lot_code = FUSE(FUSE_OPT_LOT_CODE_0);
+	u64 fab_code = FUSE(FUSE_OPT_FAB_CODE) & 0x3F;
+
+	u64 derived_lot_code = 0;
+	for (unsigned int i = 0; i < 5; i++)
+	{
+		derived_lot_code = (derived_lot_code * 0x24) + ((lot_code >> (24 - 6 * i)) & 0x3F);
+	}
+	derived_lot_code &= 0x03FFFFFF;
+
+	device_id |= y_coord << 0;
+	device_id |= x_coord << 9;
+	device_id |= wafer_id << 18;
+	device_id |= derived_lot_code << 24;
+	device_id |= fab_code << 50;
+
+	return device_id;
 }
