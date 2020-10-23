@@ -1,24 +1,52 @@
 prodinfo_gen
 ============
-Lockpick_RCM is a bare metal Nintendo Switch payload that derives encryption keys for use in Switch file handling software like hactool, hactoolnet/LibHac, ChoiDujour, etc. without booting Horizon OS.
+prodinfo_gen is a Nintendo Switch payload that can generate barely-working, console-unique, PRODINFO files.
 
-Due to changes imposed by firmware 7.0.0, Lockpick homebrew can no longer derive the latest keys. In the boot-time environment however, there is no such limitation.
+It can either generate one from scratch or modify a donor PRODINFO.
+
+It is primarily aimed at people without a backup of their PRODINFO or building a NAND from scratch.
+
+Limitations
+===========
+
+Of course, as we do not have Nintendo's private keys, the generated files.
+
+What *should* work with a **"from scratch"** PRODINFO:
+ - Booting
+ - Launching homebrews
+
+What *won't* work with a **"from scratch"** PRODINFO:
+ - Communicating with Nintendo's servers
+ - Amiibos (not tested)
+ - GameCards
+
+What *should* work with a **"from donor"** PRODINFO:
+ - Booting
+ - Launching homebrews
+ - Amiibos (not tested)
+ - GameCards (not tested)
+ - Communicating with Nintendo's servers (RISK OF BEING BANNED, not tested)
+
+USE THIS TOOL AT YOUR OWN RISK, DO NOT OVERWRITE A FACTORY PRODINFO WITHOUT MAKING A BACKUP FIRST.
 
 Usage
-=
-* It is highly recommended, but not required, to place Minerva on SD from the latest [Hekate](https://github.com/CTCaer/hekate/releases) for best performance, especially while dumping titlekeys - the file and path is `/bootloader/sys/libsys_minerva.bso`
-* Launch Lockpick_RCM.bin using your favorite payload injector or chainloader
-* Upon completion, keys will be saved to `/switch/prod.keys` and titlekeys to `/switch/title.keys` on SD
-* If the console has Firmware 7.x or higher, the `/sept/` folder from [Atmosphère](https://github.com/Atmosphere-NX/Atmosphere/releases) or [Kosmos](https://github.com/AtlasNX/Kosmos/releases) release zip must be present on SD or else only keyblob master key derivation is possible (ie. up to `master_key_05` only)
+=====
+* Make sure you have a `/switch/prod.keys` file on your microSD card with a valid `master_key_00` in it.
+* If you want to use a donor PRODINFO, place it at `/switch/donor_prodinfo.bin`.
+* Launch prodinfo_gen.bin using your favorite payload injector or chainloader.
+* You should find `/switch/generated_prodinfo_from_scratch.bin` or `/switch/generated_prodinfo_from_donor.bin` depending on what you selected.
+* You can now write that PRODINFO to your NAND using a tool such as HacDiskMount.
 
 Building
-=
+========
 Install [devkitARM](https://devkitpro.org/) and run `make`.
 
-Massive Thanks to CTCaer!
-=
-This software is heavily based on [Hekate](https://github.com/CTCaer/hekate). Beyond that, CTCaer was exceptionally helpful in the development of this project, lending loads of advice, expertise, and humor.
+Credits
+=======
+ - This software is based on **shchmue**'s [**Lockpick_RCM**](https://github.com/shchmue/Lockpick_RCM).
+ - GCM encryption primitives from [**Atmosphère**](https://github.com/Atmosphere-NX/Atmosphere)
+ - Most of the reverse engineering work comes from [**shchmue**](https://github.com/shchmue), [**PabloZaiden**](https://github.com/PabloZaiden), [**SwitchBrew**](https://switchbrew.org/wiki/Calibration)
 
 License
-=
-This project is under the GPLv2 license. The Save processing module is adapted from [hactool](https://github.com/SciresM/hactool) code under ISC.
+=======
+This project is under the GPLv2 license.
