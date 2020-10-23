@@ -38,10 +38,8 @@ bool valid_cal0_signature(u8 *prodinfo_buffer, u32 prodinfo_size);
 bool valid_body_checksum(u8 *prodinfo_buffer, u32 prodinfo_size);
 
 // Write
-bool write_extended_ecc_b233_device_key(u8 *prodinfo_buffer, u64 device_id, u8 *master_key_0);
-bool write_extended_rsa_2048_eticket_key(u8 *prodinfo_buffer, u64 device_id, u8 *master_key_0);
-bool write_ecc_b233_device_certificate(u8 *prodinfo_buffer, const char *device_id_string);
-bool write_rsa_2048_eticket_certificate(u8 *prodinfo_buffer, const char *device_id_string);
+void write_extended_ecc_b233_device_key(u8 *prodinfo_buffer, u64 device_id, u8 *master_key_0);
+void write_extended_rsa_2048_eticket_key(u8 *prodinfo_buffer, u64 device_id, u8 *master_key_0);
 void write_body_checksum(u8 *prodinfo_buffer);
 
 #endif

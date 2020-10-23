@@ -196,7 +196,7 @@ bool valid_extended_rsa_2048_eticket_key(u8 *prodinfo_buffer, u8 *master_key_0)
     return valid;
 }
 
-bool write_extended_rsa_2048_eticket_key(u8 *prodinfo_buffer, u64 device_id, u8 *master_key_0)
+void write_extended_rsa_2048_eticket_key(u8 *prodinfo_buffer, u64 device_id, u8 *master_key_0)
 {
     u8 the_key[0x10] = {0};
     unseal_key(eticket_rsa_kekek_source, eticket_rsa_kek_source, master_key_0, the_key, 3);
@@ -206,11 +206,6 @@ bool write_extended_rsa_2048_eticket_key(u8 *prodinfo_buffer, u64 device_id, u8 
     u8 *ciphertext = ctr + 0x10;
 
     _fix_gcm_content(ctr, ciphertext, 0x220, device_id, KEYSLOT_SWITCH_TEMPKEY);
-    write_crc16(prodinfo_buffer, 0x3890, 0x250);
-
-    int valid = _is_valid_gcm_content(ctr, ciphertext, 0x220, KEYSLOT_SWITCH_TEMPKEY);
-
-    return valid;
 }
 
 bool valid_extended_ecc_b233_device_key(u8 *prodinfo_buffer, u8 *master_key_0)
@@ -227,7 +222,7 @@ bool valid_extended_ecc_b233_device_key(u8 *prodinfo_buffer, u8 *master_key_0)
     return valid;
 }
 
-bool write_extended_ecc_b233_device_key(u8 *prodinfo_buffer, u64 device_id, u8 *master_key_0)
+void write_extended_ecc_b233_device_key(u8 *prodinfo_buffer, u64 device_id, u8 *master_key_0)
 {
     u8 the_key[0x10] = {0};
     unseal_key(es_kek_source, prod_kekek_source, master_key_0, the_key, 1);
@@ -237,11 +232,6 @@ bool write_extended_ecc_b233_device_key(u8 *prodinfo_buffer, u64 device_id, u8 *
     u8 *ciphertext = ctr + 0x10;
 
     _fix_gcm_content(ctr, ciphertext, 0x30, device_id, KEYSLOT_SWITCH_TEMPKEY);
-    write_crc16(prodinfo_buffer, 0x3770, 0x60);
-
-    int valid = _is_valid_gcm_content(ctr, ciphertext, 0x30, KEYSLOT_SWITCH_TEMPKEY);
-
-    return valid;
 }
 
 bool valid_ecc_b233_device_certificate(u8 *prodinfo_buffer)
@@ -249,25 +239,8 @@ bool valid_ecc_b233_device_certificate(u8 *prodinfo_buffer)
     return has_valid_crc16(prodinfo_buffer, 0x0480, 0x190);
 }
 
-bool write_ecc_b233_device_certificate(u8 *prodinfo_buffer, const char *device_id_string)
-{
-    memcpy(prodinfo_buffer + 0x0480 + 0xC6, device_id_string, 0x10);
-    write_crc16(prodinfo_buffer, 0x0480, 0x190);
-
-    int valid = has_valid_crc16(prodinfo_buffer, 0x0480, 0x190);
-    return valid;
-}
-
 bool valid_rsa_2048_eticket_certificate(u8 *prodinfo_buffer)
 {
-    return has_valid_crc16(prodinfo_buffer, 0x2A90, 0x250);
-}
-
-bool write_rsa_2048_eticket_certificate(u8 *prodinfo_buffer, const char *device_id_string)
-{
-    memcpy(prodinfo_buffer + 0x2A90 + 0xC6, device_id_string, 0x10);
-    write_crc16(prodinfo_buffer, 0x2A90, 0x250);
-
     return has_valid_crc16(prodinfo_buffer, 0x2A90, 0x250);
 }
 
@@ -334,7 +307,7 @@ void write_device_certificate(u8 *prodinfo_buffer, const char *device_id_string)
 void write_ssl_certificate(u8 *prodinfo_buffer)
 {
     u8 ssl_certificate_size[] = {0xE9, 0x05};
-    memcpy(prodinfo_buffer + 0x0AD0, ssl_certificate_size, sizeof(ssl_certificate_size));
+    memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(SslCertificateSize), ssl_certificate_size, sizeof(ssl_certificate_size));
 }
 
 void write_random_number(u8 *prodinfo_buffer)
@@ -344,15 +317,13 @@ void write_random_number(u8 *prodinfo_buffer)
 
 void write_eticket_certificate(u8 *prodinfo_buffer, const char *device_id_string)
 {
-    prodinfo_buffer[0x2A90 + 0xC4] = 'N';
-    prodinfo_buffer[0x2A90 + 0xC5] = 'X';
+    prodinfo_buffer[OFFSET_OF_BLOCK(Rsa2048ETicketCertificate) + 0xC4] = 'N';
+    prodinfo_buffer[OFFSET_OF_BLOCK(Rsa2048ETicketCertificate) + 0xC5] = 'X';
 
-    memcpy(prodinfo_buffer + 0x2A90 + 0xC6, device_id_string, 0x10);
+    memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(Rsa2048ETicketCertificate) + 0xC6, device_id_string, 0x10);
 
-    prodinfo_buffer[0x2A90 + 0xD6] = '-';
-    prodinfo_buffer[0x2A90 + 0xD7] = '0';
-
-    write_crc16(prodinfo_buffer, 0x2A90, 0x250);
+    prodinfo_buffer[OFFSET_OF_BLOCK(Rsa2048ETicketCertificate) + 0xD6] = '-';
+    prodinfo_buffer[OFFSET_OF_BLOCK(Rsa2048ETicketCertificate) + 0xD7] = '0';
 }
 
 void write_config_id(u8 *prodinfo_buffer)

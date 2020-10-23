@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020 CaramelDunes
+ * Copyright (c) 2020 CaramelDunes
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -55,13 +55,6 @@ static u32 start_time, end_time;
     gfx_printf(text " done in %d us\n", args, end_time - start_time); \
     start_time = get_tmr_us();                                        \
     minerva_periodic_training()
-
-static u8 zeros[0x10] = {0};
-
-static int _key_exists(const void *data)
-{
-    return memcmp(data, zeros, 0x10) != 0;
-};
 
 static inline u32 _read_le_u32(const void *buffer, u32 offset)
 {
@@ -128,26 +121,51 @@ void build_cal0_scratch()
     u8 *prodinfo_buffer = malloc(prodinfo_size);
     memset(prodinfo_buffer, 0, prodinfo_size);
 
+    gfx_printf("%kWriting header\n", colors[(color_idx++) % 6]);
     write_header(prodinfo_buffer);
+
+    gfx_printf("%kWriting config id\n", colors[(color_idx++) % 6]);
     write_config_id(prodinfo_buffer);
+
+    gfx_printf("%kWriting Wlan country codes\n", colors[(color_idx++) % 6]);
     write_wlan_country_codes(prodinfo_buffer);
+
+    gfx_printf("%kWriting MAC addresses\n", colors[(color_idx++) % 6]);
     write_mac_addresses(prodinfo_buffer, device_id_int);
+
+    gfx_printf("%kWriting sensors calibration data\n", colors[(color_idx++) % 6]);
     write_sensors_offset_scale(prodinfo_buffer);
+
+    gfx_printf("%kWriting serial number\n", colors[(color_idx++) % 6]);
     write_serial_number(prodinfo_buffer);
+
+    gfx_printf("%kWriting device certificate\n", colors[(color_idx++) % 6]);
     write_device_certificate(prodinfo_buffer, device_id_as_string);
+
+    gfx_printf("%kWriting SSL certificate\n", colors[(color_idx++) % 6]);
     write_ssl_certificate(prodinfo_buffer);
+
+    gfx_printf("%kWriting random number\n", colors[(color_idx++) % 6]);
     write_random_number(prodinfo_buffer);
+
+    gfx_printf("%kWriting ETicket certificate\n", colors[(color_idx++) % 6]);
     write_eticket_certificate(prodinfo_buffer, device_id_as_string);
+
+    gfx_printf("%kWriting battery lot\n", colors[(color_idx++) % 6]);
     write_battery_lot(prodinfo_buffer);
+
+    gfx_printf("%kWriting speaker calibration data\n", colors[(color_idx++) % 6]);
     write_speaker_calibration_value(prodinfo_buffer);
-    write_short_values(prodinfo_buffer);
+
+    gfx_printf("%kWriting extended keys\n", colors[(color_idx++) % 6]);
     write_extended_ecc_b233_device_key(prodinfo_buffer, device_id_int, master_key_0);
     write_extended_rsa_2048_eticket_key(prodinfo_buffer, device_id_int, master_key_0);
 
+    write_short_values(prodinfo_buffer);
+
+    gfx_printf("%kWriting checksums\n", colors[(color_idx++) % 6]);
     write_all_crc(prodinfo_buffer, prodinfo_size);
     write_all_sha256(prodinfo_buffer);
-
-    gfx_printf("%kWriting body checksum\n", colors[(color_idx++) % 6]);
 
     write_body_checksum(prodinfo_buffer);
 

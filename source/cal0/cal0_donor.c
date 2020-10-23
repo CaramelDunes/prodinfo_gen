@@ -38,6 +38,7 @@
 #include "gcm.h"
 #include "crc16.h"
 #include "cal0.h"
+#include "keyfile_read.h"
 
 extern hekate_config h_cfg;
 
@@ -47,8 +48,6 @@ extern u32 secindex;
 
 static u32 color_idx = 0;
 static u32 start_time, end_time;
-
-static u8 zeros[0x10] = {0};
 
 #define TPRINTF(text)                                           \
     end_time = get_tmr_us();                                    \
@@ -61,11 +60,6 @@ static u8 zeros[0x10] = {0};
     gfx_printf(text " done in %d us\n", args, end_time - start_time); \
     start_time = get_tmr_us();                                        \
     minerva_periodic_training()
-
-static int _key_exists(const void *data)
-{
-    return memcmp(data, zeros, 0x10) != 0;
-};
 
 static inline u32 _read_le_u32(const void *buffer, u32 offset)
 {
@@ -135,17 +129,17 @@ void build_cal0_donor()
     char donor_prodinfo_path[] = "sd:/switch/donor_prodinfo.bin";
     if (f_stat(donor_prodinfo_path, &fno))
     {
-        gfx_printf("Couldn't find donor prodinfo at sd:/switch/donor_prodinfo.bin");
+        gfx_printf("Couldn't find donor PRODINFO at sd:/switch/donor_prodinfo.bin");
         goto out_wait;
     }
     else if (fno.fsize < 0x40)
     {
-        gfx_printf("Donor prodinfo is too small!");
+        gfx_printf("Donor PRODINFO is too small!");
         goto out_wait;
     }
     else if (fno.fsize > 0x003FBC00)
     {
-        gfx_printf("Donor prodinfo is too big!");
+        gfx_printf("Donor PRODINFO is too big!");
         goto out_wait;
     }
 
@@ -153,46 +147,29 @@ void build_cal0_donor()
     u32 prodinfo_size = 0;
     u8 *prodinfo_buffer = sd_file_read(donor_prodinfo_path, &prodinfo_size);
 
-    // Check signature.
     if (!valid_donor_prodinfo(prodinfo_buffer, prodinfo_size))
-    {
-        gfx_printf("Donor prodinfo seems invalid...");
-        goto out_wait;
-    }
+        gfx_printf("Donor PRODINFO seems invalid.");
+    else
+        gfx_printf("%kLooks like a valid donor PRODINFO.\n", colors[(color_idx++) % 6]);
 
-    gfx_printf("%kLooks like a valid donor prodinfo.\n", colors[(color_idx++) % 6]);
+    gfx_printf("%kWriting device certificate\n", colors[(color_idx++) % 6]);
+    write_device_certificate(prodinfo_buffer, device_id_as_string);
 
-    // fix_device_cert(prodinfo_buffer, device_id_as_string);
-    // write_eticket_certificate(prodinfo_buffer, device_id_as_string);
+    gfx_printf("%kWriting ETicket certificate\n", colors[(color_idx++) % 6]);
+    write_eticket_certificate(prodinfo_buffer, device_id_as_string);
 
-    gfx_printf("%kCorrecting ExtendedEccB233DeviceKey\n", colors[(color_idx++) % 6]);
-    if (!write_extended_ecc_b233_device_key(prodinfo_buffer, device_id_int, master_key_0))
-    {
-        gfx_printf("%k  Could not correct ExtendedEccB233DeviceKey\n", colors[(color_idx++) % 6]);
-    }
+    gfx_printf("%kWriting extended keys\n", colors[(color_idx++) % 6]);
+    write_extended_ecc_b233_device_key(prodinfo_buffer, device_id_int, master_key_0);
+    write_extended_rsa_2048_eticket_key(prodinfo_buffer, device_id_int, master_key_0);
 
-    gfx_printf("%kCorrecting ExtendedRsa2048ETicketKey\n", colors[(color_idx++) % 6]);
-    if (!write_extended_rsa_2048_eticket_key(prodinfo_buffer, device_id_int, master_key_0))
-    {
-        gfx_printf("%k  Could not correct ExtendedRsa2048ETicketKey\n", colors[(color_idx++) % 6]);
-    }
-
-    gfx_printf("%kCorrecting EccB233DeviceCertificate\n", colors[(color_idx++) % 6]);
-    if (!write_ecc_b233_device_certificate(prodinfo_buffer, device_id_as_string))
-    {
-        gfx_printf("%k  Could not correct EccB233DeviceCertificate\n", colors[(color_idx++) % 6]);
-    }
-
-    gfx_printf("%kCorrecting Rsa2048ETicketCertificate\n", colors[(color_idx++) % 6]);
-    if (!write_rsa_2048_eticket_certificate(prodinfo_buffer, device_id_as_string))
-    {
-        gfx_printf("%k  Could not correct Rsa2048ETicketCertificate\n", colors[(color_idx++) % 6]);
-    }
-
+    gfx_printf("%kWriting checksums\n", colors[(color_idx++) % 6]);
     write_all_crc(prodinfo_buffer, prodinfo_size);
+    write_all_sha256(prodinfo_buffer);
 
-    gfx_printf("%kCorrecting body checksum\n", colors[(color_idx++) % 6]);
     write_body_checksum(prodinfo_buffer);
+
+    if (!valid_own_prodinfo(prodinfo_buffer, prodinfo_size, master_key_0))
+        gfx_printf("%kSomething went wrong, writing output anyway...\n", colors[(color_idx++) % 6]);
 
     if (!sd_mount())
     {
