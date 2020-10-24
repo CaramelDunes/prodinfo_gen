@@ -9,7 +9,7 @@ It is primarily aimed at people without a backup of their PRODINFO or building a
 Limitations
 ===========
 
-Of course, as we do not have Nintendo's private keys, the generated files.
+Of course, as we do not have Nintendo's private keys, the generated files can't be perfect.
 
 What *should* work with a **"from scratch"** PRODINFO:
  - Booting
