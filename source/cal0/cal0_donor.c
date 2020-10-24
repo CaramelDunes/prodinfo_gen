@@ -71,26 +71,6 @@ static inline u32 _read_le_u32(const void *buffer, u32 offset)
 
 void unseal_key(u8 *kek_source, u8 *kekek_source, u8 *master_key_0, u8 *dest, u8 usecase);
 
-static inline uint64_t read64le(const volatile void *qword, size_t offset)
-{
-    return *(uint64_t *)((uintptr_t)qword + offset);
-}
-
-static inline uint64_t read64be(const volatile void *qword, size_t offset)
-{
-    return __builtin_bswap64(read64le(qword, offset));
-}
-
-static inline void write64le(volatile void *qword, size_t offset, uint64_t value)
-{
-    *(uint64_t *)((uintptr_t)qword + offset) = value;
-}
-
-static inline void write64be(volatile void *qword, size_t offset, uint64_t value)
-{
-    write64le(qword, offset, __builtin_bswap64(value));
-}
-
 void build_cal0_donor()
 {
     sd_mount();

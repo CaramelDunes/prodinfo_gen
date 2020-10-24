@@ -41,6 +41,11 @@ static const u8 aes_kek_generation_source[0x10] = {
 static const u32 prodinfo_min_size = 0x3D70;
 static const u32 prodinfo_max_size = 0x003FBC00;
 
+static inline uint64_t read64le(const volatile void *qword, size_t offset)
+{
+    return *(uint64_t *)((uintptr_t)qword + offset);
+}
+
 static inline void write64le(volatile void *qword, size_t offset, uint64_t value)
 {
     *(uint64_t *)((uintptr_t)qword + offset) = value;
@@ -418,6 +423,7 @@ void write_all_sha256(u8 *prodinfo_buffer)
     // GameCardCertificate
     se_calc_sha256(prodinfo_buffer + 0x2840, prodinfo_buffer + 0x2440, 0x400);
 
-    // GameCardCertificate
-    se_calc_sha256(prodinfo_buffer + 0x12E0, prodinfo_buffer + 0x0AE0, 0x05E9);
+    // SslCertificate
+    u32 ssl_certificate_size = *(u32 *)(prodinfo_buffer + OFFSET_OF_BLOCK(SslCertificateSize));
+    se_calc_sha256(prodinfo_buffer + 0x12E0, prodinfo_buffer + 0x0AE0, ssl_certificate_size);
 }

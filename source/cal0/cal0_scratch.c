@@ -56,34 +56,6 @@ static u32 start_time, end_time;
     start_time = get_tmr_us();                                        \
     minerva_periodic_training()
 
-static inline u32 _read_le_u32(const void *buffer, u32 offset)
-{
-    return (*(u8 *)(buffer + offset + 0)) |
-           (*(u8 *)(buffer + offset + 1) << 0x08) |
-           (*(u8 *)(buffer + offset + 2) << 0x10) |
-           (*(u8 *)(buffer + offset + 3) << 0x18);
-}
-
-static inline uint64_t read64le(const volatile void *qword, size_t offset)
-{
-    return *(uint64_t *)((uintptr_t)qword + offset);
-}
-
-static inline uint64_t read64be(const volatile void *qword, size_t offset)
-{
-    return __builtin_bswap64(read64le(qword, offset));
-}
-
-static inline void write64le(volatile void *qword, size_t offset, uint64_t value)
-{
-    *(uint64_t *)((uintptr_t)qword + offset) = value;
-}
-
-static inline void write64be(volatile void *qword, size_t offset, uint64_t value)
-{
-    write64le(qword, offset, __builtin_bswap64(value));
-}
-
 void build_cal0_scratch()
 {
     sd_mount();
