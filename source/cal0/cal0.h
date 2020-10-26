@@ -6,7 +6,7 @@
 void device_id_string(char device_id_string[0x11]);
 
 void write_ssl_certificate(u8 *prodinfo_buffer);
-void write_random_number(u8 *prodinfo_buffer);
+void write_random_number(u8 *prodinfo_buffer, u64 device_id);
 void write_gamecard_certificate(u8 *prodinfo_buffer);
 void write_eticket_certificate(u8 *prodinfo_buffer, const char *device_id_string);
 void write_device_certificate(u8 *prodinfo_buffer, const char *device_id_string);

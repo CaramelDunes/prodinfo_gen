@@ -315,9 +315,14 @@ void write_ssl_certificate(u8 *prodinfo_buffer)
     memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(SslCertificateSize), ssl_certificate_size, sizeof(ssl_certificate_size));
 }
 
-void write_random_number(u8 *prodinfo_buffer)
+void write_random_number(u8 *prodinfo_buffer, u64 device_id)
 {
-    memset(prodinfo_buffer + 0x1300, 1, 0x1000);
+    memset(prodinfo_buffer + 0x1300, 0, 0x1000);
+    u64 key[2] = {device_id, device_id};
+    u8 ctr[0x10] = {0};
+
+    se_aes_key_set(KEYSLOT_SWITCH_TEMPKEY, key, 0x10);
+    se_aes_crypt_ctr(KEYSLOT_SWITCH_TEMPKEY, prodinfo_buffer + 0x1300, 0x1000, prodinfo_buffer + 0x1300, 0x1000, ctr);
 }
 
 void write_eticket_certificate(u8 *prodinfo_buffer, const char *device_id_string)

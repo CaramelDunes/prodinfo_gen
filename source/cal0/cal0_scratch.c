@@ -118,7 +118,7 @@ void build_cal0_scratch()
     write_ssl_certificate(prodinfo_buffer);
 
     gfx_printf("%kWriting random number\n", colors[(color_idx++) % 6]);
-    write_random_number(prodinfo_buffer);
+    write_random_number(prodinfo_buffer, device_id_int);
 
     gfx_printf("%kWriting ETicket certificate\n", colors[(color_idx++) % 6]);
     write_eticket_certificate(prodinfo_buffer, device_id_as_string);
