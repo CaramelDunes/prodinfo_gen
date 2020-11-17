@@ -25,9 +25,9 @@ What *should* work with a **"from donor"** PRODINFO:
  - Launching homebrews
  - Amiibos (not tested)
  - GameCards (not tested)
- - Communicating with Nintendo's servers (RISK OF BEING BANNED, not tested)
+ - Communicating with Nintendo's servers (HIGH PROBABILITY OF GETTING BANNED, not tested)
 
-USE THIS TOOL AT YOUR OWN RISK, DO NOT OVERWRITE A FACTORY PRODINFO WITHOUT MAKING A BACKUP FIRST.
+**USE THIS TOOL AT YOUR OWN RISK, DO NOT OVERWRITE A FACTORY PRODINFO WITHOUT MAKING A BACKUP FIRST.**
 
 Usage
 =====
