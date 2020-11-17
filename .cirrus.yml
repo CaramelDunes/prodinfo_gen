@@ -1,0 +1,7 @@
+container:
+  image: devkitpro/devkita64_devkitarm:latest
+  
+payload_build_task:
+  build_script: make
+  payload_artifacts:
+    path: "output/prodinfo_gen.bin"

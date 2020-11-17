@@ -1,4 +1,4 @@
-prodinfo_gen
+prodinfo_gen [![Build Status](https://api.cirrus-ci.com/github/CaramelDunes/prodinfo_gen.svg)](https://cirrus-ci.com/github/CaramelDunes/prodinfo_gen)
 ============
 prodinfo_gen is a Nintendo Switch payload that can generate barely-working, console-unique, PRODINFO files.
 
