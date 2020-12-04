@@ -19,13 +19,16 @@
 
 #include <utils/types.h>
 
+#define AES_128_KEY_SIZE 16
+#define RSA_2048_KEY_SIZE 256
+
 // only tickets of type Rsa2048Sha256 are expected
 typedef struct {
     u32 signature_type;   // always 0x10004
-    u8 signature[0x100];
+    u8 signature[RSA_2048_KEY_SIZE];
     u8 sig_padding[0x3C];
     char issuer[0x40];
-    u8 titlekey_block[0x100];
+    u8 titlekey_block[RSA_2048_KEY_SIZE];
     u8 format_version;
     u8 titlekey_type;
     u16 ticket_version;
@@ -59,8 +62,8 @@ typedef struct {
 } titlekey_buffer_t;
 
 typedef struct {
-    u8 private_exponent[0x100];
-    u8 modulus[0x100];
+    u8 private_exponent[RSA_2048_KEY_SIZE];
+    u8 modulus[RSA_2048_KEY_SIZE];
     u8 public_exponent[4];
     u8 reserved[0x14];
     u64 device_id;
@@ -68,9 +71,9 @@ typedef struct {
 } rsa_keypair_t;
 
 typedef struct {
-    u8 master_kek[0x10];
+    u8 master_kek[AES_128_KEY_SIZE];
     u8 data[0x70];
-    u8 package1_key[0x10];
+    u8 package1_key[AES_128_KEY_SIZE];
 } keyblob_t;
 
 typedef struct {
