@@ -23,10 +23,12 @@
 
 #define ALIGN(x, a) (((x) + (a) - 1) & ~((a) - 1))
 #define ALIGN_DOWN(x, a) (((x) - ((a) - 1)) & ~((a) - 1))
+#define BIT(n) (1U << (n))
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define DIV_ROUND_UP(a, b) ((a + b - 1) / b)
 
+#define ARRAY_SIZE(x) (sizeof(x) / sizeof(*(x)))
 #define LOG2(n) (32 - __builtin_clz(n) - 1)
 
 #define OFFSET_OF(t, m) ((u32)&((t *)NULL)->m)
@@ -60,17 +62,25 @@ typedef volatile unsigned char vu8;
 typedef volatile unsigned short vu16;
 typedef volatile unsigned int vu32;
 
+#ifdef __aarch64__
+typedef u64 uptr;
+#else /* __arm__ or __thumb__ */
+typedef u32 uptr;
+#endif
+
 static const u32 colors[6] = {COLOR_RED, COLOR_ORANGE, COLOR_YELLOW, COLOR_GREEN, COLOR_BLUE, COLOR_VIOLET};
 
 typedef int bool;
 #define true  1
 #define false 0
 
-#define BOOT_CFG_AUTOBOOT_EN (1 << 0)
-#define BOOT_CFG_FROM_LAUNCH (1 << 1)
-#define BOOT_CFG_SEPT_RUN    (1 << 7)
+#define BOOT_CFG_AUTOBOOT_EN BIT(0)
+#define BOOT_CFG_FROM_LAUNCH BIT(1)
+#define BOOT_CFG_FROM_ID     BIT(2)
+#define BOOT_CFG_TO_EMUMMC   BIT(3)
+#define BOOT_CFG_SEPT_RUN    BIT(7)
 
-#define EXTRA_CFG_DUMP_EMUMMC (1 << 0)
+#define EXTRA_CFG_DUMP_EMUMMC BIT(0)
 
 typedef struct __attribute__((__packed__)) _boot_cfg_t
 {
@@ -82,8 +92,10 @@ typedef struct __attribute__((__packed__)) _boot_cfg_t
 	{
 		struct
 		{
-			char id[8];
+			char id[8]; // 7 char ASCII null teminated.
+			char emummc_path[0x78]; // emuMMC/XXX, ASCII null teminated.
 		};
+		u8 ums; // nyx_ums_type.
 		u8 xt_str[0x80];
 	};
 } boot_cfg_t;

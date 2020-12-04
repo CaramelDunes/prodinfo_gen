@@ -64,6 +64,7 @@
 #define FUSE_OPT_X_COORDINATE 0x214
 #define FUSE_OPT_Y_COORDINATE 0x218
 #define FUSE_GPU_IDDQ_CALIB	0x228
+#define FUSE_RESERVED_ODM28 0x240
 #define FUSE_USB_CALIB_EXT 0x350
 
 /*! Fuse commands. */
@@ -75,12 +76,21 @@
 /*! Fuse cache registers. */
 #define FUSE_RESERVED_ODMX(x) (0x1C8 + 4 * (x))
 
+enum
+{
+	FUSE_NX_HW_TYPE_ICOSA,
+	FUSE_NX_HW_TYPE_IOWA,
+	FUSE_NX_HW_TYPE_HOAG
+};
+
 void fuse_disable_program();
-u32 fuse_read_odm(u32 idx);
-u32 fuse_read_odm_keygen_rev();
+u32  fuse_read_odm(u32 idx);
+u32  fuse_read_odm_keygen_rev();
+u32  fuse_read_hw_type();
+u8   fuse_count_burnt(u32 val);
 void fuse_wait_idle();
-int fuse_read_ipatch(void (*ipatch)(u32 offset, u32 value));
-int fuse_read_evp_thunk(u32 *iram_evp_thunks, u32 *iram_evp_thunks_len);
+int  fuse_read_ipatch(void (*ipatch)(u32 offset, u32 value));
+int  fuse_read_evp_thunk(u32 *iram_evp_thunks, u32 *iram_evp_thunks_len);
 void fuse_read_array(u32 *words);
 bool fuse_check_patched_rcm();
 

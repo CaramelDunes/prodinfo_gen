@@ -17,6 +17,7 @@
 #ifndef _CONFIG_H_
 #define _CONFIG_H_
 
+#include "hos/hos.h"
 #include <utils/types.h>
 
 typedef struct _hekate_config
@@ -29,14 +30,16 @@ typedef struct _hekate_config
 	u32 autohosoff;
 	u32 autonogc;
 	u32 updater2p;
-	char *brand;
-	char *tagline;
+	u32 bootprotect;
 	// Global temporary config.
+	bool t210b01;
 	bool se_keygen_done;
 	bool sept_run;
+	bool aes_slots_new;
 	bool emummc_force_disable;
 	bool rcm_patched;
 	u32  errors;
+	hos_eks_mbr_t *eks;
 } hekate_config;
 
 void set_default_configuration();

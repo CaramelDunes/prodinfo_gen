@@ -31,7 +31,7 @@
 #include <power/max77620.h>
 #include <rtc/max77620-rtc.h>
 #include <soc/bpmp.h>
-#include "soc/hw_init.h"
+#include <soc/hw_init.h>
 #include "storage/emummc.h"
 #include "storage/nx_emmc.h"
 #include <storage/nx_sd.h>
@@ -126,12 +126,12 @@ int launch_payload(char *path)
 		{
 			reloc_patcher(PATCHED_RELOC_ENTRY, EXT_PAYLOAD_ADDR, ALIGN(size, 0x10));
 
-			reconfig_hw_workaround(false, byte_swap_32(*(u32 *)(buf + size - sizeof(u32))));
+			hw_reinit_workaround(false, byte_swap_32(*(u32 *)(buf + size - sizeof(u32))));
 		}
 		else
 		{
 			reloc_patcher(PATCHED_RELOC_ENTRY, EXT_PAYLOAD_ADDR, 0x7000);
-			reconfig_hw_workaround(true, 0);
+			hw_reinit_workaround(true, 0);
 		}
 
 		// Some cards (Sandisk U1), do not like a fast power cycle. Wait min 100ms.
@@ -326,7 +326,7 @@ extern void pivot_stack(u32 stack_top);
 void ipl_main()
 {
 	// Do initial HW configuration. This is compatible with consecutive reruns without a reset.
-	config_hw();
+	hw_init();
 
 	// Pivot the stack so we have enough space.
 	pivot_stack(IPL_STACK_TOP);
@@ -342,9 +342,12 @@ void ipl_main()
 	// Set bootloader's default configuration.
 	set_default_configuration();
 
-	sd_mount();
+	// Mount SD Card.
+	h_cfg.errors |= !sd_mount() ? ERR_SD_BOOT_EN : 0;
 
-	minerva_init();
+	// Train DRAM and switch to max frequency.
+	if (minerva_init()) //!TODO: Add Tegra210B01 support to minerva.
+		h_cfg.errors |= ERR_LIBSYS_MTC;
 	minerva_change_freq(FREQ_1600);
 
 	display_init();
@@ -355,6 +358,15 @@ void ipl_main()
 	gfx_con_init();
 
 	display_backlight_pwm_init();
+
+	if (h_cfg.t210b01)
+	{
+		gfx_printf("Mariko SOC detected!\nMariko is currently unsupported\nbut stay tuned...");
+		gfx_printf("\n\n Press any button to power off.");
+		display_backlight_brightness(h_cfg.backlight, 1000);
+		btn_wait();
+		power_off();
+	}
 
 	// Overclock BPMP.
 	bpmp_clk_rate_set(BPMP_CLK_DEFAULT_BOOST);

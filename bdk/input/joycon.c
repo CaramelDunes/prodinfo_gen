@@ -24,6 +24,7 @@
 #include <power/regulator_5v.h>
 #include <soc/bpmp.h>
 #include <soc/clock.h>
+#include <soc/fuse.h>
 #include <soc/gpio.h>
 #include <soc/pinmux.h>
 #include <soc/uart.h>
@@ -33,32 +34,32 @@
 // For disabling driver when logging is enabled.
 #include <libs/lv_conf.h>
 
-#define JC_WIRED_CMD        0x91
-#define JC_WIRED_HID        0x92
-#define JC_WIRED_INIT_REPLY 0x94
-#define JC_INIT_HANDSHAKE   0xA5
+#define JC_WIRED_CMD             0x91
+#define JC_WIRED_HID             0x92
+#define JC_WIRED_INIT_REPLY      0x94
+#define JC_INIT_HANDSHAKE        0xA5
 
-#define JC_WIRED_CMD_MAC 0x01
-#define JC_WIRED_CMD_10  0x10
+#define JC_WIRED_CMD_MAC         0x01
+#define JC_WIRED_CMD_10          0x10
 
-#define JC_HID_OUTPUT_RPT 0x01
-#define JC_HID_RUMBLE_RPT 0x10
+#define JC_HID_OUTPUT_RPT        0x01
+#define JC_HID_RUMBLE_RPT        0x10
 
-#define JC_HID_INPUT_RPT  0x30
-#define JC_HID_SUBMCD_RPT 0x21
+#define JC_HID_INPUT_RPT         0x30
+#define JC_HID_SUBMCD_RPT        0x21
 
 #define JC_HID_SUBCMD_HCI_STATE  0x06
-#define  HCI_STATE_SLEEP     0x00
-#define  HCI_STATE_RECONNECT 0x01
-#define  HCI_STATE_PAIR      0x02
-#define  HCI_STATE_HOME      0x04
+#define  HCI_STATE_SLEEP         0x00
+#define  HCI_STATE_RECONNECT     0x01
+#define  HCI_STATE_PAIR          0x02
+#define  HCI_STATE_HOME          0x04
 #define JC_HID_SUBCMD_SPI_READ   0x10
-#define  SPI_READ_OFFSET     0x20
+#define  SPI_READ_OFFSET         0x20
 #define JC_HID_SUBCMD_RUMBLE_CTL 0x48
 #define JC_HID_SUBCMD_SND_RUMBLE 0xFF
 
 #define JC_BTN_MASK_L 0xFF2900 // 0xFFE900: with charge status.
-#define JC_BTN_MASK_R 0x76FF
+#define JC_BTN_MASK_R 0x0056FF
 
 #define JC_ID_L 1
 #define JC_ID_R 2
@@ -206,7 +207,7 @@ static u16 jc_packet_add_uart_hdr(jc_wired_hdr_t *out, u8 wired_cmd, u8 *data, u
 	out->uart_hdr.magic[1] = 0x01;
 	out->uart_hdr.magic[2] = 0x3;
 
-	out->uart_hdr.total_size_lsb = 7;
+	out->uart_hdr.total_size_lsb = sizeof(jc_wired_hdr_t) - sizeof(jc_uart_hdr_t);
 	out->uart_hdr.total_size_msb = 0;
 	out->cmd = wired_cmd;
 
@@ -523,6 +524,9 @@ jc_gamepad_rpt_t *jc_get_bt_pairing_info(bool *is_l_hos, bool *is_r_hos)
 	u8 retries;
 	jc_bt_conn_t *bt_conn;
 
+	if (!jc_init_done)
+		return NULL;
+
 	bt_conn = &jc_gamepad.bt_conn_l;
 	memset(bt_conn->host_mac, 0, 6);
 	memset(bt_conn->ltk, 0, 16);
@@ -812,7 +816,10 @@ void jc_init_hw()
 	jc_l.uart = UART_C;
 	jc_r.uart = UART_B;
 
-#if (LV_LOG_PRINTF != 1)
+	if (fuse_read_hw_type() == FUSE_NX_HW_TYPE_HOAG)
+		return;
+
+#ifndef DEBUG_UART_PORT
 	jc_power_supply(UART_C, true);
 	jc_power_supply(UART_B, true);
 

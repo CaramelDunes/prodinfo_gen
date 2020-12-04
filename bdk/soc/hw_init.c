@@ -56,7 +56,15 @@ extern volatile nyx_storage_t *nyx_str;
  * PCLK    - 68MHz  init (-> 136MHz -> OC/4).
  */
 
-void _config_oscillators()
+u32 hw_get_chip_id()
+{
+	if (((APB_MISC(APB_MISC_GP_HIDREV) >> 4) & 0xF) >= GP_HIDREV_MAJOR_T210B01)
+		return GP_HIDREV_MAJOR_T210B01;
+	else
+		return GP_HIDREV_MAJOR_T210;
+}
+
+static void _config_oscillators()
 {
 	CLOCK(CLK_RST_CONTROLLER_SPARE_REG0) = (CLOCK(CLK_RST_CONTROLLER_SPARE_REG0) & 0xFFFFFFF3) | 4; // Set CLK_M_DIVISOR to 2.
 	SYSCTR0(SYSCTR0_CNTFID0) = 19200000;             // Set counter frequency.
@@ -73,35 +81,44 @@ void _config_oscillators()
 
 	PMC(APBDEV_PMC_TSC_MULT) = (PMC(APBDEV_PMC_TSC_MULT) & 0xFFFF0000) | 0x249F; //0x249F = 19200000 * (16 / 32.768 kHz)
 
-	CLOCK(CLK_RST_CONTROLLER_CLK_SOURCE_SYS) = 0;              // Set SCLK div to 1.
-	CLOCK(CLK_RST_CONTROLLER_SCLK_BURST_POLICY) = 0x20004444;  // Set clk source to Run and PLLP_OUT2 (204MHz).
+	CLOCK(CLK_RST_CONTROLLER_CLK_SOURCE_SYS) = 0;              // Set BPMP/SCLK div to 1.
+	CLOCK(CLK_RST_CONTROLLER_SCLK_BURST_POLICY) = 0x20004444;  // Set BPMP/SCLK source to Run and PLLP_OUT2 (204MHz).
 	CLOCK(CLK_RST_CONTROLLER_SUPER_SCLK_DIVIDER) = 0x80000000; // Enable SUPER_SDIV to 1.
 	CLOCK(CLK_RST_CONTROLLER_CLK_SYSTEM_RATE) = 2;             // Set HCLK div to 1 and PCLK div to 3.
 }
 
-void _config_gpios()
+static void _config_gpios(bool nx_hoag)
 {
-	PINMUX_AUX(PINMUX_AUX_UART2_TX) = 0;
-	PINMUX_AUX(PINMUX_AUX_UART3_TX) = 0;
+	// Clamp inputs when tristated.
+	APB_MISC(APB_MISC_PP_PINMUX_GLOBAL) = 0;
+
+	if (!nx_hoag)
+	{
+		PINMUX_AUX(PINMUX_AUX_UART2_TX) = 0;
+		PINMUX_AUX(PINMUX_AUX_UART3_TX) = 0;
+
+		// Set pin mode for UARTB/C TX pins.
+#if !defined (DEBUG_UART_PORT) || DEBUG_UART_PORT != UART_B
+		gpio_config(GPIO_PORT_G, GPIO_PIN_0, GPIO_MODE_GPIO);
+#endif
+#if !defined (DEBUG_UART_PORT) || DEBUG_UART_PORT != UART_C
+		gpio_config(GPIO_PORT_D, GPIO_PIN_1, GPIO_MODE_GPIO);
+#endif
+
+		// Enable input logic for UARTB/C TX pins.
+		gpio_output_enable(GPIO_PORT_G, GPIO_PIN_0, GPIO_OUTPUT_DISABLE);
+		gpio_output_enable(GPIO_PORT_D, GPIO_PIN_1, GPIO_OUTPUT_DISABLE);
+	}
 
 	// Set Joy-Con IsAttached direction.
 	PINMUX_AUX(PINMUX_AUX_GPIO_PE6) = PINMUX_INPUT_ENABLE | PINMUX_TRISTATE;
 	PINMUX_AUX(PINMUX_AUX_GPIO_PH6) = PINMUX_INPUT_ENABLE | PINMUX_TRISTATE;
 
-	// Set pin mode for Joy-Con IsAttached and UARTB/C TX pins.
-#if !defined (DEBUG_UART_PORT) || DEBUG_UART_PORT != UART_B
-	gpio_config(GPIO_PORT_G, GPIO_PIN_0, GPIO_MODE_GPIO);
-#endif
-#if !defined (DEBUG_UART_PORT) || DEBUG_UART_PORT != UART_C
-	gpio_config(GPIO_PORT_D, GPIO_PIN_1, GPIO_MODE_GPIO);
-#endif
 	// Set Joy-Con IsAttached mode.
 	gpio_config(GPIO_PORT_E, GPIO_PIN_6, GPIO_MODE_GPIO);
 	gpio_config(GPIO_PORT_H, GPIO_PIN_6, GPIO_MODE_GPIO);
 
-	// Enable input logic for Joy-Con IsAttached and UARTB/C TX pins.
-	gpio_output_enable(GPIO_PORT_G, GPIO_PIN_0, GPIO_OUTPUT_DISABLE);
-	gpio_output_enable(GPIO_PORT_D, GPIO_PIN_1, GPIO_OUTPUT_DISABLE);
+	// Enable input logic for Joy-Con IsAttached pins.
 	gpio_output_enable(GPIO_PORT_E, GPIO_PIN_6, GPIO_OUTPUT_DISABLE);
 	gpio_output_enable(GPIO_PORT_H, GPIO_PIN_6, GPIO_OUTPUT_DISABLE);
 
@@ -120,27 +137,28 @@ void _config_gpios()
 	// gpio_config(GPIO_PORT_Y, GPIO_PIN_1, GPIO_MODE_GPIO);
 }
 
-void _config_pmc_scratch()
+static void _config_pmc_scratch()
 {
-	PMC(APBDEV_PMC_SCRATCH20) &= 0xFFF3FFFF;  // Unset Debug console from Customer Option.
+	PMC(APBDEV_PMC_SCRATCH20)  &= 0xFFF3FFFF; // Unset Debug console from Customer Option.
 	PMC(APBDEV_PMC_SCRATCH190) &= 0xFFFFFFFE; // Unset DATA_DQ_E_IVREF EMC_PMACRO_DATA_PAD_TX_CTRL
 	PMC(APBDEV_PMC_SECURE_SCRATCH21) |= PMC_FUSE_PRIVATEKEYDISABLE_TZ_STICKY_BIT;
 }
 
-void _mbist_workaround()
+static void _mbist_workaround()
 {
-	CLOCK(CLK_RST_CONTROLLER_CLK_OUT_ENB_V) |= (1 << 10); // Enable AHUB clock.
-	CLOCK(CLK_RST_CONTROLLER_CLK_OUT_ENB_Y) |= (1 <<  6); // Enable APE clock.
+	// Make sure Audio clocks are enabled before accessing I2S.
+	CLOCK(CLK_RST_CONTROLLER_CLK_OUT_ENB_V) |= BIT(CLK_V_AHUB);
+	CLOCK(CLK_RST_CONTROLLER_CLK_OUT_ENB_Y) |= BIT(CLK_Y_APE);
 
 	// Set mux output to SOR1 clock switch.
 	CLOCK(CLK_RST_CONTROLLER_CLK_SOURCE_SOR1) = (CLOCK(CLK_RST_CONTROLLER_CLK_SOURCE_SOR1) | 0x8000) & 0xFFFFBFFF;
 	// Enabled PLLD and set csi to PLLD for test pattern generation.
 	CLOCK(CLK_RST_CONTROLLER_PLLD_BASE) |= 0x40800000;
 
-	// Clear per-clock resets.
-	CLOCK(CLK_RST_CONTROLLER_RST_DEV_Y_CLR) = 0x40;       // Clear reset APE.
-	CLOCK(CLK_RST_CONTROLLER_RST_DEV_X_CLR) = 0x40000;    // Clear reset VIC.
-	CLOCK(CLK_RST_CONTROLLER_RST_DEV_L_CLR) = 0x18000000; // Clear reset DISP1, HOST1X.
+	// Clear per-clock resets for APE/VIC/HOST1X/DISP1.
+	CLOCK(CLK_RST_CONTROLLER_RST_DEV_Y_CLR) = BIT(CLK_Y_APE);
+	CLOCK(CLK_RST_CONTROLLER_RST_DEV_X_CLR) = BIT(CLK_X_VIC);
+	CLOCK(CLK_RST_CONTROLLER_RST_DEV_L_CLR) = BIT(CLK_L_HOST1X) | BIT(CLK_L_DISP1);
 	usleep(2);
 
 	// I2S channels to master and disable SLCG.
@@ -159,20 +177,59 @@ void _mbist_workaround()
 	VIC(0x8C) = 0xFFFFFFFF;
 	usleep(2);
 
-	// Set per-clock reset.
-	CLOCK(CLK_RST_CONTROLLER_RST_DEV_Y_SET) = 0x40;       // Set reset APE.
-	CLOCK(CLK_RST_CONTROLLER_RST_DEV_L_SET) = 0x18000000; // Set reset DISP1, HOST1x.
-	CLOCK(CLK_RST_CONTROLLER_RST_DEV_X_SET) = 0x40000;    // Set reset VIC.
+	// Set per-clock reset for APE/VIC/HOST1X/DISP1.
+	CLOCK(CLK_RST_CONTROLLER_RST_DEV_Y_SET) = BIT(CLK_Y_APE);
+	CLOCK(CLK_RST_CONTROLLER_RST_DEV_L_SET) = BIT(CLK_L_HOST1X) | BIT(CLK_L_DISP1);
+	CLOCK(CLK_RST_CONTROLLER_RST_DEV_X_SET) = BIT(CLK_X_VIC);
 
 	// Enable specific clocks and disable all others.
-	CLOCK(CLK_RST_CONTROLLER_CLK_OUT_ENB_H) = 0xC0;       // Enable clock PMC, FUSE.
-	CLOCK(CLK_RST_CONTROLLER_CLK_OUT_ENB_L) = 0x80000130; // Enable clock RTC, TMR, GPIO, BPMP_CACHE.
-	//CLOCK(CLK_RST_CONTROLLER_CLK_OUT_ENB_L) = 0x80400130; // Keep USBD ON.
-	CLOCK(CLK_RST_CONTROLLER_CLK_OUT_ENB_U) = 0x1F00200;  // Enable clock CSITE, IRAMA, IRAMB, IRAMC, IRAMD, BPMP_CACHE_RAM.
-	CLOCK(CLK_RST_CONTROLLER_CLK_OUT_ENB_V) = 0x80400808; // Enable clock MSELECT, APB2APE, SPDIF_DOUBLER, SE.
-	CLOCK(CLK_RST_CONTROLLER_CLK_OUT_ENB_W) = 0x402000FC; // Enable clock PCIERX0, PCIERX1, PCIERX2, PCIERX3, PCIERX4, PCIERX5, ENTROPY, MC1.
-	CLOCK(CLK_RST_CONTROLLER_CLK_OUT_ENB_X) = 0x23000780; // Enable clock MC_CAPA, MC_CAPB, MC_CPU, MC_BBC, DBGAPB, HPLL_ADSP, PLLG_REF.
-	CLOCK(CLK_RST_CONTROLLER_CLK_OUT_ENB_Y) = 0x300;      // Enable clock MC_CDPA, MC_CCPA.
+	// CLK L Devices.
+	CLOCK(CLK_RST_CONTROLLER_CLK_OUT_ENB_H) =
+		BIT(CLK_H_PMC) |
+		BIT(CLK_H_FUSE);
+	// CLK H Devices.
+	CLOCK(CLK_RST_CONTROLLER_CLK_OUT_ENB_L) =
+		BIT(CLK_L_RTC)  |
+		BIT(CLK_L_TMR)  |
+		BIT(CLK_L_GPIO) |
+		BIT(CLK_L_BPMP_CACHE_CTRL);
+	// CLK U Devices.
+	CLOCK(CLK_RST_CONTROLLER_CLK_OUT_ENB_U) =
+		BIT(CLK_U_CSITE) |
+		BIT(CLK_U_IRAMA) |
+		BIT(CLK_U_IRAMB) |
+		BIT(CLK_U_IRAMC) |
+		BIT(CLK_U_IRAMD) |
+		BIT(CLK_U_BPMP_CACHE_RAM);
+	// CLK V Devices.
+	CLOCK(CLK_RST_CONTROLLER_CLK_OUT_ENB_V) =
+		BIT(CLK_V_MSELECT)       |
+		BIT(CLK_V_APB2APE)       |
+		BIT(CLK_V_SPDIF_DOUBLER) |
+		BIT(CLK_V_SE);
+	// CLK W Devices.
+	CLOCK(CLK_RST_CONTROLLER_CLK_OUT_ENB_W) =
+		BIT(CLK_W_PCIERX0) |
+		BIT(CLK_W_PCIERX1) |
+		BIT(CLK_W_PCIERX2) |
+		BIT(CLK_W_PCIERX3) |
+		BIT(CLK_W_PCIERX4) |
+		BIT(CLK_W_PCIERX5) |
+		BIT(CLK_W_ENTROPY) |
+		BIT(CLK_W_MC1);
+	// CLK X Devices.
+	CLOCK(CLK_RST_CONTROLLER_CLK_OUT_ENB_X) =
+		BIT(CLK_X_MC_CAPA)  |
+		BIT(CLK_X_MC_CBPA)  |
+		BIT(CLK_X_MC_CPU)   |
+		BIT(CLK_X_MC_BBC)   |
+		BIT(CLK_X_GPU)      |
+		BIT(CLK_X_DBGAPB)   |
+		BIT(CLK_X_PLLG_REF);
+	// CLK Y Devices.
+	CLOCK(CLK_RST_CONTROLLER_CLK_OUT_ENB_Y) =
+		BIT(CLK_Y_MC_CDPA) |
+		BIT(CLK_Y_MC_CCPA);
 
 	// Disable clock gate overrides.
 	CLOCK(CLK_RST_CONTROLLER_LVL2_CLK_GATE_OVRA) = 0;
@@ -182,20 +239,21 @@ void _mbist_workaround()
 	CLOCK(CLK_RST_CONTROLLER_LVL2_CLK_GATE_OVRE) = 0;
 
 	// Set child clock sources.
-	CLOCK(CLK_RST_CONTROLLER_PLLD_BASE) &= 0x1F7FFFFF; // Disable PLLD and set reference clock and csi clock.
-	CLOCK(CLK_RST_CONTROLLER_CLK_SOURCE_SOR1) &= 0xFFFF3FFF; // Set SOR1 to automatic muxing of safe clock (24MHz) or SOR1 clk switch.
-	CLOCK(CLK_RST_CONTROLLER_CLK_SOURCE_VI) = (CLOCK(CLK_RST_CONTROLLER_CLK_SOURCE_VI) & 0x1FFFFFFF) | 0x80000000; // Set clock source to PLLP_OUT.
+	CLOCK(CLK_RST_CONTROLLER_PLLD_BASE)        &= 0x1F7FFFFF; // Disable PLLD and set reference clock and csi clock.
+	CLOCK(CLK_RST_CONTROLLER_CLK_SOURCE_SOR1)  &= 0xFFFF3FFF; // Set SOR1 to automatic muxing of safe clock (24MHz) or SOR1 clk switch.
+	CLOCK(CLK_RST_CONTROLLER_CLK_SOURCE_VI)     = (CLOCK(CLK_RST_CONTROLLER_CLK_SOURCE_VI) & 0x1FFFFFFF) | 0x80000000;     // Set clock source to PLLP_OUT.
 	CLOCK(CLK_RST_CONTROLLER_CLK_SOURCE_HOST1X) = (CLOCK(CLK_RST_CONTROLLER_CLK_SOURCE_HOST1X) & 0x1FFFFFFF) | 0x80000000; // Set clock source to PLLP_OUT.
-	CLOCK(CLK_RST_CONTROLLER_CLK_SOURCE_NVENC) = (CLOCK(CLK_RST_CONTROLLER_CLK_SOURCE_NVENC) & 0x1FFFFFFF) | 0x80000000; // Set clock source to PLLP_OUT.
+	CLOCK(CLK_RST_CONTROLLER_CLK_SOURCE_NVENC)  = (CLOCK(CLK_RST_CONTROLLER_CLK_SOURCE_NVENC) & 0x1FFFFFFF) | 0x80000000;  // Set clock source to PLLP_OUT.
 }
 
-void _config_se_brom()
+static void _config_se_brom()
 {
 	// Enable fuse clock.
 	clock_enable_fuse(true);
 
 	// Skip SBK/SSK if sept was run.
-	if (!(b_cfg.boot_cfg & BOOT_CFG_SEPT_RUN))
+	bool sbk_skip = b_cfg.boot_cfg & BOOT_CFG_SEPT_RUN || FUSE(FUSE_PRIVATE_KEY0) == 0xFFFFFFFF;
+	if (!sbk_skip)
 	{
 		// Bootrom part we skipped.
 		u32 sbk[4] = {
@@ -225,115 +283,145 @@ void _config_se_brom()
 	APB_MISC(APB_MISC_PP_STRAPPING_OPT_A) = (APB_MISC(APB_MISC_PP_STRAPPING_OPT_A) & 0xF0) | (7 << 10);
 }
 
-void _config_regulators()
+static void _config_regulators(bool tegra_t210)
 {
 	// Disable low battery shutdown monitor.
 	max77620_low_battery_monitor_config(false);
 
 	// Disable SDMMC1 IO power.
-	gpio_output_enable(GPIO_PORT_E, GPIO_PIN_4, GPIO_OUTPUT_DISABLE);
+	gpio_write(GPIO_PORT_E, GPIO_PIN_4, GPIO_LOW);
 	max77620_regulator_enable(REGULATOR_LDO2, 0);
 	sd_power_cycle_time_start = get_tmr_ms();
 
 	i2c_send_byte(I2C_5, MAX77620_I2C_ADDR, MAX77620_REG_CNFGBBC, MAX77620_CNFGBBC_RESISTOR_1K);
 	i2c_send_byte(I2C_5, MAX77620_I2C_ADDR, MAX77620_REG_ONOFFCNFG1,
-		(1 << 6) | (3 << MAX77620_ONOFFCNFG1_MRT_SHIFT)); // PWR delay for forced shutdown off.
+		BIT(6) | (3 << MAX77620_ONOFFCNFG1_MRT_SHIFT)); // PWR delay for forced shutdown off.
 
-	// Configure all Flexible Power Sequencers.
-	i2c_send_byte(I2C_5, MAX77620_I2C_ADDR, MAX77620_REG_FPS_CFG0,
-		(7 << MAX77620_FPS_TIME_PERIOD_SHIFT));
-	i2c_send_byte(I2C_5, MAX77620_I2C_ADDR, MAX77620_REG_FPS_CFG1,
-		(7 << MAX77620_FPS_TIME_PERIOD_SHIFT) | (1 << MAX77620_FPS_EN_SRC_SHIFT));
-	i2c_send_byte(I2C_5, MAX77620_I2C_ADDR, MAX77620_REG_FPS_CFG2,
-		(7 << MAX77620_FPS_TIME_PERIOD_SHIFT));
-	max77620_regulator_config_fps(REGULATOR_LDO4);
-	max77620_regulator_config_fps(REGULATOR_LDO8);
-	max77620_regulator_config_fps(REGULATOR_SD0);
-	max77620_regulator_config_fps(REGULATOR_SD1);
-	max77620_regulator_config_fps(REGULATOR_SD3);
+	if (tegra_t210)
+	{
+		// Configure all Flexible Power Sequencers for MAX77620.
+		i2c_send_byte(I2C_5, MAX77620_I2C_ADDR, MAX77620_REG_FPS_CFG0, (7 << MAX77620_FPS_TIME_PERIOD_SHIFT));
+		i2c_send_byte(I2C_5, MAX77620_I2C_ADDR, MAX77620_REG_FPS_CFG1, (7 << MAX77620_FPS_TIME_PERIOD_SHIFT) | (1 << MAX77620_FPS_EN_SRC_SHIFT));
+		i2c_send_byte(I2C_5, MAX77620_I2C_ADDR, MAX77620_REG_FPS_CFG2, (7 << MAX77620_FPS_TIME_PERIOD_SHIFT));
+		max77620_regulator_config_fps(REGULATOR_LDO4);
+		max77620_regulator_config_fps(REGULATOR_LDO8);
+		max77620_regulator_config_fps(REGULATOR_SD0);
+		max77620_regulator_config_fps(REGULATOR_SD1);
+		max77620_regulator_config_fps(REGULATOR_SD3);
 
-	i2c_send_byte(I2C_5, MAX77620_I2C_ADDR, MAX77620_REG_FPS_GPIO3,
-		(4 << MAX77620_FPS_TIME_PERIOD_SHIFT) | (2 << MAX77620_FPS_PD_PERIOD_SHIFT)); // 3.x+
+		i2c_send_byte(I2C_5, MAX77620_I2C_ADDR, MAX77620_REG_FPS_GPIO3,
+			(4 << MAX77620_FPS_TIME_PERIOD_SHIFT) | (2 << MAX77620_FPS_PD_PERIOD_SHIFT)); // 3.x+
 
-	// Set vdd_core voltage to 1.125V.
-	max77620_regulator_set_voltage(REGULATOR_SD0, 1125000);
+		// Set vdd_core voltage to 1.125V.
+		max77620_regulator_set_voltage(REGULATOR_SD0, 1125000);
 
-	// Fix CPU/GPU after a L4T warmboot.
-	i2c_send_byte(I2C_5, MAX77620_I2C_ADDR, MAX77620_REG_GPIO5, 2);
-	i2c_send_byte(I2C_5, MAX77620_I2C_ADDR, MAX77620_REG_GPIO6, 2);
+		// Fix CPU/GPU after a L4T warmboot.
+		i2c_send_byte(I2C_5, MAX77620_I2C_ADDR, MAX77620_REG_GPIO5, 2);
+		i2c_send_byte(I2C_5, MAX77620_I2C_ADDR, MAX77620_REG_GPIO6, 2);
 
-	i2c_send_byte(I2C_5, MAX77621_CPU_I2C_ADDR, MAX77621_VOUT_REG, MAX77621_VOUT_0_95V); // Disable power.
-	i2c_send_byte(I2C_5, MAX77621_CPU_I2C_ADDR, MAX77621_VOUT_DVS_REG, MAX77621_VOUT_ENABLE | MAX77621_VOUT_1_09V); // Enable DVS power.
-	i2c_send_byte(I2C_5, MAX77621_CPU_I2C_ADDR, MAX77621_CONTROL1_REG, MAX77621_RAMP_50mV_PER_US);
-	i2c_send_byte(I2C_5, MAX77621_CPU_I2C_ADDR, MAX77621_CONTROL2_REG,
-		MAX77621_T_JUNCTION_120 | MAX77621_FT_ENABLE | MAX77621_CKKADV_TRIP_75mV_PER_US_HIST_DIS |
-		MAX77621_CKKADV_TRIP_150mV_PER_US | MAX77621_INDUCTOR_NOMINAL);
+		i2c_send_byte(I2C_5, MAX77621_CPU_I2C_ADDR, MAX77621_VOUT_REG,     MAX77621_VOUT_0_95V); // Disable power.
+		i2c_send_byte(I2C_5, MAX77621_CPU_I2C_ADDR, MAX77621_VOUT_DVS_REG, MAX77621_VOUT_ENABLE | MAX77621_VOUT_1_09V); // Enable DVS power.
+		i2c_send_byte(I2C_5, MAX77621_CPU_I2C_ADDR, MAX77621_CONTROL1_REG, MAX77621_RAMP_50mV_PER_US);
+		i2c_send_byte(I2C_5, MAX77621_CPU_I2C_ADDR, MAX77621_CONTROL2_REG,
+			MAX77621_T_JUNCTION_120 | MAX77621_FT_ENABLE | MAX77621_CKKADV_TRIP_75mV_PER_US_HIST_DIS |
+			MAX77621_CKKADV_TRIP_150mV_PER_US | MAX77621_INDUCTOR_NOMINAL);
 
-	i2c_send_byte(I2C_5, MAX77621_GPU_I2C_ADDR, MAX77621_VOUT_REG, MAX77621_VOUT_0_95V); // Disable power.
-	i2c_send_byte(I2C_5, MAX77621_GPU_I2C_ADDR, MAX77621_VOUT_DVS_REG, MAX77621_VOUT_ENABLE | MAX77621_VOUT_1_09V); // Enable DVS power.
-	i2c_send_byte(I2C_5, MAX77621_GPU_I2C_ADDR, MAX77621_CONTROL1_REG, MAX77621_RAMP_50mV_PER_US);
-	i2c_send_byte(I2C_5, MAX77621_GPU_I2C_ADDR, MAX77621_CONTROL2_REG,
-		MAX77621_T_JUNCTION_120 | MAX77621_FT_ENABLE | MAX77621_CKKADV_TRIP_75mV_PER_US_HIST_DIS |
-		MAX77621_CKKADV_TRIP_150mV_PER_US | MAX77621_INDUCTOR_NOMINAL);
+		i2c_send_byte(I2C_5, MAX77621_GPU_I2C_ADDR, MAX77621_VOUT_REG,     MAX77621_VOUT_0_95V); // Disable power.
+		i2c_send_byte(I2C_5, MAX77621_GPU_I2C_ADDR, MAX77621_VOUT_DVS_REG, MAX77621_VOUT_ENABLE | MAX77621_VOUT_1_09V); // Enable DVS power.
+		i2c_send_byte(I2C_5, MAX77621_GPU_I2C_ADDR, MAX77621_CONTROL1_REG, MAX77621_RAMP_50mV_PER_US);
+		i2c_send_byte(I2C_5, MAX77621_GPU_I2C_ADDR, MAX77621_CONTROL2_REG,
+			MAX77621_T_JUNCTION_120 | MAX77621_FT_ENABLE | MAX77621_CKKADV_TRIP_75mV_PER_US_HIST_DIS |
+			MAX77621_CKKADV_TRIP_150mV_PER_US | MAX77621_INDUCTOR_NOMINAL);
+	}
+	else // Tegra X1+ set vdd_core voltage to 1.05V.
+		max77620_regulator_set_voltage(REGULATOR_SD0, 1050000);
 }
 
-void config_hw()
+void hw_init()
 {
+	// Get Chip ID.
+	bool tegra_t210 = hw_get_chip_id() == GP_HIDREV_MAJOR_T210;
+	bool nx_hoag = fuse_read_hw_type() == FUSE_NX_HW_TYPE_HOAG;
+
 	// Bootrom stuff we skipped by going through rcm.
 	_config_se_brom();
 	//FUSE(FUSE_PRIVATEKEYDISABLE) = 0x11;
 	SYSREG(AHB_AHB_SPARE_REG) &= 0xFFFFFF9F; // Unset APB2JTAG_OVERRIDE_EN and OBS_OVERRIDE_EN.
 	PMC(APBDEV_PMC_SCRATCH49) = PMC(APBDEV_PMC_SCRATCH49) & 0xFFFFFFFC;
 
-	_mbist_workaround();
+	// Perform Memory Built-In Self Test WAR if T210.
+	if (tegra_t210)
+		_mbist_workaround();
+
+	// Enable Security Engine clock.
 	clock_enable_se();
 
-	// Enable fuse clock.
+	// Enable Fuse clock.
 	clock_enable_fuse(true);
 
-	// Disable fuse programming.
+	// Disable Fuse programming.
 	fuse_disable_program();
 
+	// Enable clocks to Memory controllers and disable AHB redirect.
 	mc_enable();
 
+	// Initialize counters, CLKM, BPMP and other clocks based on 38.4MHz oscillator.
 	_config_oscillators();
-	APB_MISC(APB_MISC_PP_PINMUX_GLOBAL) = 0;
-	_config_gpios();
+
+	// Initialize pin configuration.
+	_config_gpios(nx_hoag);
 
 #ifdef DEBUG_UART_PORT
 	clock_enable_uart(DEBUG_UART_PORT);
 	uart_init(DEBUG_UART_PORT, 115200);
 #endif
 
+	// Enable Dynamic Voltage and Frequency Scaling device clock.
 	clock_enable_cl_dvfs();
 
+	// Enable clocks to I2C1 and I2CPWR.
 	clock_enable_i2c(I2C_1);
 	clock_enable_i2c(I2C_5);
 
+	// Enable clock to TZRAM.
 	clock_enable_tzram();
 
-	i2c_init(I2C_1);
+	// Initialize I2C5, mandatory for PMIC.
 	i2c_init(I2C_5);
+
+	//! TODO: Why? Device is NFC MCU on Lite.
+	if (nx_hoag)
+		max77620_regulator_set_volt_and_flags(REGULATOR_LDO8, 2800000, MAX77620_POWER_MODE_NORMAL);
+
+	// Initialize I2C1 for various power related devices.
+	i2c_init(I2C_1);
 
 	// Enable charger in case it's disabled.
 	bq24193_enable_charger();
 
-	_config_regulators();
+	// Initialize various regulators based on Erista/Mariko platform.
+	_config_regulators(tegra_t210);
 
 	_config_pmc_scratch(); // Missing from 4.x+
 
-	CLOCK(CLK_RST_CONTROLLER_SCLK_BURST_POLICY) = 0x20003333; // Set SCLK to PLLP_OUT (408MHz).
+	// Set BPMP/SCLK to PLLP_OUT (408MHz).
+	CLOCK(CLK_RST_CONTROLLER_SCLK_BURST_POLICY) = 0x20003333;
 
+	// Disable TZRAM shutdown control and lock the regs.
+	if (!tegra_t210)
+	{
+		PMC(APBDEV_PMC_TZRAM_PWR_CNTRL) &= 0xFFFFFFFE;
+		PMC(APBDEV_PMC_TZRAM_NON_SEC_DISABLE) = 3;
+		PMC(APBDEV_PMC_TZRAM_SEC_DISABLE) = 3;
+	}
+
+	// Initialize External memory controller and configure DRAM parameters.
 	sdram_init();
 
 	bpmp_mmu_enable();
-	mc_enable_ahb_redirect();
-
-	// Clear flags from PMC_SCRATCH0
-	PMC(APBDEV_PMC_SCRATCH0) &= ~PMC_SCRATCH0_MODE_PAYLOAD;
 }
 
-void reconfig_hw_workaround(bool extra_reconfig, u32 magic)
+void hw_reinit_workaround(bool extra_reconfig, u32 magic)
 {
 	// Disable BPMP max clock.
 	bpmp_clk_rate_set(BPMP_CLK_NORMAL);
@@ -354,8 +442,8 @@ void reconfig_hw_workaround(bool extra_reconfig, u32 magic)
 	nyx_str->mtc_cfg.init_done = 0;
 
 	// Re-enable clocks to Audio Processing Engine as a workaround to hanging.
-	CLOCK(CLK_RST_CONTROLLER_CLK_OUT_ENB_V) |= (1 << 10); // Enable AHUB clock.
-	CLOCK(CLK_RST_CONTROLLER_CLK_OUT_ENB_Y) |= (1 <<  6); // Enable APE clock.
+	CLOCK(CLK_RST_CONTROLLER_CLK_OUT_ENB_V) |= BIT(CLK_V_AHUB);
+	CLOCK(CLK_RST_CONTROLLER_CLK_OUT_ENB_Y) |= BIT(CLK_Y_APE);
 
 	if (extra_reconfig)
 	{
@@ -377,7 +465,7 @@ void reconfig_hw_workaround(bool extra_reconfig, u32 magic)
 	// Enable clock to USBD and init SDMMC1 to avoid hangs with bad hw inits.
 	if (magic == 0xBAADF00D)
 	{
-		CLOCK(CLK_RST_CONTROLLER_CLK_OUT_ENB_L) |= (1 << 22);
+		CLOCK(CLK_RST_CONTROLLER_CLK_ENB_L_SET) = BIT(CLK_L_USBD);
 		sdmmc_init(&sd_sdmmc, SDMMC_1, SDMMC_POWER_3_3, SDMMC_BUS_WIDTH_1, SDHCI_TIMING_SD_ID, 0);
 		clock_disable_cl_dvfs();
 

@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018 naehrwert
+ * Copyright (c) 2018-2020 CTCaer
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -15,18 +16,21 @@
  */
 
 #include <soc/ccplex.h>
+#include <soc/fuse.h>
+#include <soc/hw_init.h>
 #include <soc/i2c.h>
 #include <soc/clock.h>
-#include <utils/util.h>
 #include <soc/pmc.h>
 #include <soc/t210.h>
 #include <power/max77620.h>
 #include <power/max7762x.h>
+#include <power/max77812.h>
+#include <utils/util.h>
 
-void _ccplex_enable_power()
+void _ccplex_enable_power_t210()
 {
 	u8 tmp = i2c_recv_byte(I2C_5, MAX77620_I2C_ADDR, MAX77620_REG_AME_GPIO); // Get current pinmuxing
-	i2c_send_byte(I2C_5, MAX77620_I2C_ADDR, MAX77620_REG_AME_GPIO, tmp & ~(1 << 5)); // Disable GPIO5 pinmuxing.
+	i2c_send_byte(I2C_5, MAX77620_I2C_ADDR, MAX77620_REG_AME_GPIO, tmp & ~BIT(5)); // Disable GPIO5 pinmuxing.
 	i2c_send_byte(I2C_5, MAX77620_I2C_ADDR, MAX77620_REG_GPIO5, MAX77620_CNFG_GPIO_DRV_PUSHPULL | MAX77620_CNFG_GPIO_OUTPUT_VAL_HIGH);
 
 	// Enable cores power.
@@ -40,37 +44,12 @@ void _ccplex_enable_power()
 	i2c_send_byte(I2C_5, MAX77621_CPU_I2C_ADDR, MAX77621_VOUT_DVS_REG, MAX77621_VOUT_ENABLE | MAX77621_VOUT_0_95V);
 }
 
-int _ccplex_pmc_enable_partition(u32 part, int enable)
+void _ccplex_enable_power_t210b01()
 {
-	u32 part_mask = 1 << part;
-	u32 desired_state = enable << part;
-
-	// Check if the partition has the state we want.
-	if ((PMC(APBDEV_PMC_PWRGATE_STATUS) & part_mask) == desired_state)
-		return 1;
-
-	u32 i = 5001;
-	while (PMC(APBDEV_PMC_PWRGATE_TOGGLE) & 0x100)
-	{
-		usleep(1);
-		i--;
-		if (i < 1)
-			return 0;
-	}
-
-	// Toggle power gating.
-	PMC(APBDEV_PMC_PWRGATE_TOGGLE) = part | 0x100;
-
-	i = 5001;
-	while (i > 0)
-	{
-		if ((PMC(APBDEV_PMC_PWRGATE_STATUS) & part_mask) == desired_state)
-			break;
-		usleep(1);
-		i--;
-	}
-
-	return 1;
+	u8 pmic_cpu_addr = !(FUSE(FUSE_RESERVED_ODM28) & 1) ? MAX77812_PHASE31_CPU_I2C_ADDR : MAX77812_PHASE211_CPU_I2C_ADDR;
+	u8 tmp = i2c_recv_byte(I2C_5, pmic_cpu_addr, MAX77812_REG_EN_CTRL);
+	i2c_send_byte(I2C_5, pmic_cpu_addr, MAX77812_REG_EN_CTRL, tmp | MAX77812_EN_CTRL_EN_M4);
+	i2c_send_byte(I2C_5, pmic_cpu_addr, MAX77812_REG_M4_VOUT, MAX77812_M4_VOUT_0_80V);
 }
 
 void ccplex_boot_cpu0(u32 entry)
@@ -78,7 +57,10 @@ void ccplex_boot_cpu0(u32 entry)
 	// Set ACTIVE_CLUSER to FAST.
 	FLOW_CTLR(FLOW_CTLR_BPMP_CLUSTER_CONTROL) &= 0xFFFFFFFE;
 
-	_ccplex_enable_power();
+	if (hw_get_chip_id() == GP_HIDREV_MAJOR_T210)
+		_ccplex_enable_power_t210();
+	else
+		_ccplex_enable_power_t210b01();
 
 	if (!(CLOCK(CLK_RST_CONTROLLER_PLLX_BASE) & 0x40000000)) // PLLX_ENABLE.
 	{
@@ -94,12 +76,12 @@ void ccplex_boot_cpu0(u32 entry)
 
 	// Configure MSELECT source and enable clock.
 	CLOCK(CLK_RST_CONTROLLER_CLK_SOURCE_MSELECT) = (CLOCK(CLK_RST_CONTROLLER_CLK_SOURCE_MSELECT) & 0x1FFFFF00) | 6;
-	CLOCK(CLK_RST_CONTROLLER_CLK_OUT_ENB_V) = (CLOCK(CLK_RST_CONTROLLER_CLK_OUT_ENB_V) & 0xFFFFFFF7) | 8;
+	CLOCK(CLK_RST_CONTROLLER_CLK_OUT_ENB_V) = (CLOCK(CLK_RST_CONTROLLER_CLK_OUT_ENB_V) & ~BIT(CLK_V_MSELECT)) | BIT(CLK_V_MSELECT);
 
 	// Configure initial CPU clock frequency and enable clock.
 	CLOCK(CLK_RST_CONTROLLER_CCLK_BURST_POLICY) = 0x20008888;
 	CLOCK(CLK_RST_CONTROLLER_SUPER_CCLK_DIVIDER) = 0x80000000;
-	CLOCK(CLK_RST_CONTROLLER_CLK_ENB_V_SET) = 1;
+	CLOCK(CLK_RST_CONTROLLER_CLK_ENB_V_SET) = BIT(CLK_V_CPUG);
 
 	clock_enable_coresight();
 
@@ -107,11 +89,11 @@ void ccplex_boot_cpu0(u32 entry)
 	CLOCK(CLK_RST_CONTROLLER_CPU_SOFTRST_CTRL2) &= 0xFFFFF000;
 
 	// Enable CPU rail.
-	_ccplex_pmc_enable_partition(0, 1);
-	// Enable cluster 0 non-CPU.
-	_ccplex_pmc_enable_partition(15, 1);
-	// Enable CE0.
-	_ccplex_pmc_enable_partition(14, 1);
+	pmc_enable_partition(0, 1);
+	// Enable cluster 0 non-CPU rail.
+	pmc_enable_partition(15, 1);
+	// Enable CE0 rail.
+	pmc_enable_partition(14, 1);
 
 	// Request and wait for RAM repair.
 	FLOW_CTLR(FLOW_CTLR_RAM_REPAIR) = 1;
@@ -131,7 +113,7 @@ void ccplex_boot_cpu0(u32 entry)
 	// MC(MC_TZ_SECURITY_CTRL) = 1;
 
 	// Clear MSELECT reset.
-	CLOCK(CLK_RST_CONTROLLER_RST_DEVICES_V) &= 0xFFFFFFF7;
+	CLOCK(CLK_RST_CONTROLLER_RST_DEVICES_V) &= ~BIT(CLK_V_MSELECT);
 	// Clear NONCPU reset.
 	CLOCK(CLK_RST_CONTROLLER_RST_CPUG_CMPLX_CLR) = 0x20000000;
 	// Clear CPU0 reset.

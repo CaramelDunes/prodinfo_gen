@@ -1,5 +1,7 @@
 /*
- * Copyright (c) 2018 naehrwert
+ * USB-PD driver for Nintendo Switch's TI BM92T36
+ *
+ * Copyright (c) 2020 CTCaer
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -14,29 +16,26 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef _KFUSE_H_
-#define _KFUSE_H_
+#ifndef __BM92T36_H_
+#define __BM92T36_H_
 
 #include <utils/types.h>
 
-#define KFUSE_STATE_CURBLOCK_MASK  0x3F
-#define KFUSE_STATE_ERRBLOCK_SHIFT 8
-#define KFUSE_STATE_ERRBLOCK_MASK  0x3F00
-#define KFUSE_STATE_DONE           BIT(16)
-#define KFUSE_STATE_CRCPASS        BIT(17)
-#define KFUSE_STATE_RESTART        BIT(24)
-#define KFUSE_STATE_STOP           BIT(25)
-#define KFUSE_STATE_SOFTRESET      BIT(31)
+#define BM92T36_I2C_ADDR 0x18
 
-#define KFUSE_KEYADDR_AUTOINC      BIT(16)
+typedef struct _usb_pd_object_t
+{
+	u32 amperage;
+	u32 voltage;
+} usb_pd_object_t;
 
-#define KFUSE_STATE 0x80
-#define KFUSE_KEYADDR 0x88
-#define KFUSE_KEYS 0x8C
+typedef struct _usb_pd_objects_t
+{
+	u32 pdo_no;
+	usb_pd_object_t pdos[7];
+	usb_pd_object_t selected_pdo;
+} usb_pd_objects_t;
 
-#define KFUSE_NUM_WORDS 144
-
-int kfuse_wait_ready();
-int kfuse_read(u32 *buf);
+void bm92t36_get_sink_info(bool *inserted, usb_pd_objects_t *usb_pd);
 
 #endif
