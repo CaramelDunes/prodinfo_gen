@@ -344,6 +344,11 @@ int se_aes_crypt_ctr(u32 ks, void *dst, u32 dst_size, const void *src, u32 src_s
 // random calls were derived from Atmosphère's
 int se_initialize_rng()
 {
+	static bool initialized = false;
+
+	if (initialized)
+		return 1;
+
 	u8 *output_buf = (u8 *)malloc(0x10);
 
 	SE(SE_CONFIG_REG_OFFSET) = SE_CONFIG_ENC_ALG(ALG_RNG) | SE_CONFIG_DST(DST_MEMORY);
@@ -357,6 +362,8 @@ int se_initialize_rng()
 	int res =_se_execute(OP_START, output_buf, 0x10, NULL, 0);
 
 	free(output_buf);
+	if (res)
+		initialized = true;
 	return res;
 }
 
@@ -600,3 +607,74 @@ out:;
 	free(opad);
 	return res;
 }
+
+// _mgf1_xor() and rsa_oaep_decode were derived from Atmosphère
+static void _mgf1_xor(void *masked, u32 masked_size, const void *seed, u32 seed_size)
+{
+    u8 cur_hash[0x20];
+    u8 hash_buf[0xe4];
+
+    u32 hash_buf_size = seed_size + 4;
+    memcpy(hash_buf, seed, seed_size);
+    u32 round_num = 0;
+
+    u8 *p_out = (u8 *)masked;
+
+    while (masked_size) {
+        u32 cur_size = MIN(masked_size, 0x20);
+
+        for (u32 i = 0; i < 4; i++)
+            hash_buf[seed_size + 3 - i] = (round_num >> (8 * i)) & 0xff;
+        round_num++;
+
+        se_calc_sha256(cur_hash, hash_buf, hash_buf_size);
+
+        for (unsigned int i = 0; i < cur_size; i++) {
+            *p_out ^= cur_hash[i];
+            p_out++;
+        }
+
+        masked_size -= cur_size;
+    }
+}
+
+u32 se_rsa_oaep_decode(void *dst, u32 dst_size, const void *label_digest, u32 label_digest_size, u8 *buf, u32 buf_size)
+{
+	if (dst_size <= 0 || buf_size < 0x43 || label_digest_size != 0x20)
+		return 0;
+
+	bool is_valid = buf[0] == 0;
+
+	u32 db_len = buf_size - 0x21;
+	u8 *seed = buf + 1;
+	u8 *db = seed + 0x20;
+	_mgf1_xor(seed, 0x20, db, db_len);
+	_mgf1_xor(db, db_len, seed, 0x20);
+
+	is_valid &= memcmp(label_digest, db, 0x20) ? 0 : 1;
+
+	db += 0x20;
+	db_len -= 0x20;
+
+	int msg_ofs = 0;
+	int looking_for_one = 1;
+	int invalid_db_padding = 0;
+	int is_zero;
+	int is_one;
+	for (int i = 0; i < db_len; )
+	{
+		is_zero = (db[i] == 0);
+		is_one  = (db[i] == 1);
+		msg_ofs += (looking_for_one & is_one) * (++i);
+		looking_for_one &= ~is_one;
+		invalid_db_padding |= (looking_for_one & ~is_zero);
+	}
+
+	is_valid &= (invalid_db_padding == 0);
+
+	const u32 msg_size = MIN(dst_size, is_valid * (db_len - msg_ofs));
+	memcpy(dst, db + msg_ofs, msg_size);
+
+	return msg_size;
+}
+

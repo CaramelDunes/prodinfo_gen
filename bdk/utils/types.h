@@ -19,10 +19,15 @@
 
 #define NULL ((void *)0)
 
+#define ALWAYS_INLINE inline __attribute__((always_inline))
+
 #define ALIGN(x, a) (((x) + (a) - 1) & ~((a) - 1))
 #define ALIGN_DOWN(x, a) (((x) - ((a) - 1)) & ~((a) - 1))
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
+#define DIV_ROUND_UP(a, b) ((a + b - 1) / b)
+
+#define LOG2(n) (32 - __builtin_clz(n) - 1)
 
 #define OFFSET_OF(t, m) ((u32)&((t *)NULL)->m)
 #define CONTAINER_OF(mp, t, mn) ((t *)((u32)mp - OFFSET_OF(t, mn)))
@@ -90,5 +95,21 @@ typedef struct __attribute__((__packed__)) _reloc_meta_t
 	u32 end;
 	u32 ep;
 } reloc_meta_t;
+
+typedef enum
+{
+	VALIDITY_UNCHECKED = 0,
+	VALIDITY_INVALID,
+	VALIDITY_VALID
+} validity_t;
+
+typedef enum
+{
+	OPEN_MODE_READ          = 1,
+	OPEN_MODE_WRITE         = 2,
+	OPEN_MODE_ALLOW_APPEND  = 4,
+	OPEN_MODE_READ_WRITE    = OPEN_MODE_READ | OPEN_MODE_WRITE,
+	OPEN_MODE_ALL           = OPEN_MODE_READ | OPEN_MODE_WRITE | OPEN_MODE_ALLOW_APPEND
+} open_mode_t;
 
 #endif

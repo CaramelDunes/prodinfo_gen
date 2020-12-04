@@ -163,7 +163,8 @@ typedef struct _nx_emmc_cal0_t
 	u8   crc16_pad36[0x10];
 	u8   ext_ecc_b233_eticket_key[0x50];
 	u8   crc16_pad37[0x10];
-	u8   ext_ecc_rsa2048_eticket_key[0x240];
+	u8   ext_ecc_rsa2048_eticket_key_iv[0x10];
+	u8   ext_ecc_rsa2048_eticket_key[0x230];
 	u32  ext_ecc_rsa2048_eticket_key_ver;
 	u8   crc16_pad38[0xC];
 	u8   ext_ssl_key[0x130];
@@ -226,6 +227,7 @@ typedef struct _nx_emmc_cal0_t
 
 #define NX_EMMC_CALIBRATION_OFFSET 0x4400
 #define NX_EMMC_CALIBRATION_SIZE   0x8000
+#define XTS_CLUSTER_SIZE           0x4000
 
 int nx_emmc_bis_read(u32 sector, u32 count, void *buff);
 int nx_emmc_bis_write(u32 sector, u32 count, void *buff);

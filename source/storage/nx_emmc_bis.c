@@ -24,12 +24,12 @@
 #include <mem/heap.h>
 #include <sec/se.h>
 #include "../storage/nx_emmc.h"
+#include "nx_emmc_bis.h"
 #include <storage/sdmmc.h>
 #include <utils/types.h>
 
 #define MAX_CLUSTER_CACHE_ENTRIES 32768
 #define CLUSTER_LOOKUP_EMPTY_ENTRY 0xFFFFFFFF
-#define XTS_CLUSTER_SIZE 0x4000
 #define SECTORS_PER_CLUSTER 0x20
 
 typedef struct

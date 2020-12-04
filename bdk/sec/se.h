@@ -42,5 +42,6 @@ int se_aes_xts_crypt(u32 tweak_ks, u32 crypt_ks, u32 enc, u64 sec, void *dst, co
 int se_aes_cmac(u32 ks, void *dst, u32 dst_size, const void *src, u32 src_size);
 int se_calc_sha256(void *dst, const void *src, u32 src_size);
 int se_calc_hmac_sha256(void *dst, const void *src, u32 src_size, const void *key, u32 key_size);
+u32 se_rsa_oaep_decode(void *dst, u32 dst_size, const void *label_digest, u32 label_digest_size, u8 *buf, u32 buf_size);
 
 #endif
