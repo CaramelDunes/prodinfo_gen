@@ -19,6 +19,8 @@
 
 #include <utils/types.h>
 
+#include "../hos/hos.h"
+
 #define AES_128_KEY_SIZE 16
 #define RSA_2048_KEY_SIZE 256
 
@@ -82,6 +84,34 @@ typedef struct {
     keyblob_t key_data;
     u8 unused[0x150];
 } encrypted_keyblob_t;
+
+typedef struct {
+    u8  temp_key[AES_128_KEY_SIZE],
+        bis_key[4][AES_128_KEY_SIZE * 2],
+        device_key[AES_128_KEY_SIZE],
+        device_key_4x[AES_128_KEY_SIZE],
+        sd_seed[AES_128_KEY_SIZE],
+        // FS-related keys
+        header_key[AES_128_KEY_SIZE * 2],
+        save_mac_key[AES_128_KEY_SIZE],
+        // other sysmodule keys
+        eticket_rsa_kek[AES_128_KEY_SIZE],
+        eticket_rsa_kek_personalized[AES_128_KEY_SIZE],
+        ssl_rsa_kek[AES_128_KEY_SIZE],
+        // keyblob-derived families
+        keyblob_key[KB_FIRMWARE_VERSION_600 + 1][AES_128_KEY_SIZE],
+        keyblob_mac_key[KB_FIRMWARE_VERSION_600 + 1][AES_128_KEY_SIZE],
+        package1_key[KB_FIRMWARE_VERSION_600 + 1][AES_128_KEY_SIZE],
+        // master key-derived families
+        key_area_key[3][KB_FIRMWARE_VERSION_MAX + 1][AES_128_KEY_SIZE],
+        master_kek[KB_FIRMWARE_VERSION_MAX + 1][AES_128_KEY_SIZE],
+        master_key[KB_FIRMWARE_VERSION_MAX + 1][AES_128_KEY_SIZE],
+        package2_key[KB_FIRMWARE_VERSION_MAX + 1][AES_128_KEY_SIZE],
+        titlekek[KB_FIRMWARE_VERSION_MAX + 1][AES_128_KEY_SIZE],
+        tsec_keys[AES_128_KEY_SIZE * 2];
+    u32 sbk[4];
+    keyblob_t keyblob[KB_FIRMWARE_VERSION_600 + 1];
+} key_derivation_ctx_t;
 
 #define TPRINTF(text) \
     end_time = get_tmr_us(); \
