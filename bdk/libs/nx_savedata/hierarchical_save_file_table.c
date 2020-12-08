@@ -207,7 +207,7 @@ void save_hierarchical_file_table_unlink_file_from_parent(hierarchical_save_file
             return;
         }
         prev_index = cur_index;
-        memcpy(&prev_entry, &cur_entry, sizeof(prev_entry));
+        memcpy(&prev_entry, &cur_entry, sizeof(save_table_entry_t));
         cur_index = prev_entry.next_sibling;
     }
 }
@@ -236,7 +236,7 @@ void save_hierarchical_file_table_unlink_directory_from_parent(hierarchical_save
             return;
         }
         prev_index = cur_index;
-        memcpy(&prev_entry, &cur_entry, sizeof(prev_entry));
+        memcpy(&prev_entry, &cur_entry, sizeof(save_table_entry_t));
         cur_index = prev_entry.next_sibling;
     }
 }

@@ -135,7 +135,7 @@ validity_t save_hierarchical_integrity_verification_storage_validate(hierarchica
     validity_t result = VALIDITY_VALID;
     integrity_verification_storage_ctx_t *storage = &ctx->integrity_storages[3];
 
-    uint64_t block_size = storage->base_storage.sector_size;
+    uint32_t block_size = storage->base_storage.sector_size;
     uint32_t block_count = (uint32_t)(DIV_ROUND_UP(ctx->length, block_size));
 
     uint8_t *buffer = malloc(block_size);
@@ -143,7 +143,7 @@ validity_t save_hierarchical_integrity_verification_storage_validate(hierarchica
     for (unsigned int i = 0; i < block_count; i++) {
         if (ctx->level_validities[3][i] == VALIDITY_UNCHECKED) {
             uint64_t storage_size = storage->base_storage.length;
-            uint32_t to_read = MIN((uint32_t)(storage_size - block_size * i), (uint32_t)block_size);
+            uint32_t to_read = MIN((uint32_t)(storage_size - block_size * i), block_size);
             substorage_read(&ctx->data_level->base_storage, buffer, block_size * i, to_read);
         }
         if (ctx->level_validities[3][i] == VALIDITY_INVALID) {

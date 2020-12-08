@@ -38,12 +38,21 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 #include <gfx_utils.h>
 
-void save_allocation_table_storage_init(allocation_table_storage_ctx_t *ctx, substorage *data, allocation_table_ctx_t *table, uint32_t block_size, uint32_t initial_block) {
+bool save_allocation_table_storage_init(allocation_table_storage_ctx_t *ctx, substorage *data, allocation_table_ctx_t *table, uint32_t block_size, uint32_t initial_block) {
     ctx->base_storage = data;
     ctx->block_size = block_size;
     ctx->fat = table;
     ctx->initial_block = initial_block;
-    ctx->_length = initial_block == 0xFFFFFFFF ? 0 : save_allocation_table_get_list_length(table, initial_block) * block_size;
+    ctx->_length = 0;
+    if (initial_block != 0xFFFFFFFF) {
+        uint32_t list_length = save_allocation_table_get_list_length(table, initial_block);
+        if (list_length == 0) {
+            EPRINTF("Allocation table storage init failed!");
+            return false;
+        };
+        ctx->_length = list_length * block_size;
+    }
+    return true;
 }
 
 uint32_t save_allocation_table_storage_read(allocation_table_storage_ctx_t *ctx, void *buffer, uint64_t offset, uint64_t count) {

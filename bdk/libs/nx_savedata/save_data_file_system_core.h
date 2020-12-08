@@ -66,7 +66,7 @@ static ALWAYS_INLINE void save_data_file_system_core_get_total_space_size(save_d
     *out_total_space = ctx->header->block_size * ctx->header->block_count;
 }
 
-void save_data_file_system_core_init(save_data_file_system_core_ctx_t *ctx, substorage *storage, void *allocation_table, save_fs_header_t *save_fs_header);
+bool save_data_file_system_core_init(save_data_file_system_core_ctx_t *ctx, substorage *storage, void *allocation_table, save_fs_header_t *save_fs_header);
 
 bool save_data_file_system_core_create_directory(save_data_file_system_core_ctx_t *ctx, const char *path);
 bool save_data_file_system_core_create_file(save_data_file_system_core_ctx_t *ctx, const char *path, uint64_t size);

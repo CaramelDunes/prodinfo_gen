@@ -41,21 +41,29 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 #include <gfx_utils.h>
 #include <mem/heap.h>
 
-static ALWAYS_INLINE void save_data_file_system_core_open_fat_storage(save_data_file_system_core_ctx_t *ctx, allocation_table_storage_ctx_t *storage_ctx, uint32_t block_index) {
-    save_allocation_table_storage_init(storage_ctx, ctx->base_storage, &ctx->allocation_table, (uint32_t)ctx->header->block_size, block_index);
+static ALWAYS_INLINE bool save_data_file_system_core_open_fat_storage(save_data_file_system_core_ctx_t *ctx, allocation_table_storage_ctx_t *storage_ctx, uint32_t block_index) {
+    return save_allocation_table_storage_init(storage_ctx, ctx->base_storage, &ctx->allocation_table, (uint32_t)ctx->header->block_size, block_index);
 }
 
-void save_data_file_system_core_init(save_data_file_system_core_ctx_t *ctx, substorage *storage, void *allocation_table, save_fs_header_t *save_fs_header) {
+bool save_data_file_system_core_init(save_data_file_system_core_ctx_t *ctx, substorage *storage, void *allocation_table, save_fs_header_t *save_fs_header) {
     save_allocation_table_init(&ctx->allocation_table, allocation_table, &save_fs_header->fat_header);
     ctx->header = save_fs_header;
     ctx->base_storage = storage;
 
     save_filesystem_list_ctx_t *dir_table = &ctx->file_table.directory_table;
     save_filesystem_list_ctx_t *file_table = &ctx->file_table.file_table;
-    save_data_file_system_core_open_fat_storage(ctx, &dir_table->storage, save_fs_header->fat_header.directory_table_block);
-    save_data_file_system_core_open_fat_storage(ctx, &file_table->storage, save_fs_header->fat_header.file_table_block);
+    if (!save_data_file_system_core_open_fat_storage(ctx, &dir_table->storage, save_fs_header->fat_header.directory_table_block)) {
+        EPRINTF("Failed to init dir table for fs core!");
+        return false;
+    }
+    if (!save_data_file_system_core_open_fat_storage(ctx, &file_table->storage, save_fs_header->fat_header.file_table_block)) {
+        EPRINTF("Failed to init file table for fs core!");
+        return false;
+    }
     save_fs_list_init(dir_table);
     save_fs_list_init(file_table);
+
+    return true;
 }
 
 bool save_data_file_system_core_create_directory(save_data_file_system_core_ctx_t *ctx, const char *path) {
