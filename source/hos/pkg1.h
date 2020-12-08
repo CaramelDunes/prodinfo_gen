@@ -23,6 +23,19 @@
 #define PKG1_OFFSET    0x100000
 #define KEYBLOB_OFFSET 0x180000
 
+typedef struct _bl_hdr_t210b01_t
+{
+	u8  aes_mac[0x10];
+	u8  rsa_sig[0x100];
+	u8  salt[0x20];
+	u8  sha256[0x20];
+	u32 version;
+	u32 size;
+	u32 load_addr;
+	u32 entrypoint;
+	u8  rsvd[0x10];
+} bl_hdr_t210b01_t;
+
 typedef struct _pkg1_id_t
 {
 	const char *id;

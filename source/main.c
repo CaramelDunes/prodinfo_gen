@@ -297,27 +297,30 @@ void _get_key_generations(char *sysnand_label, char *emunand_label)
 	sdmmc_t sdmmc;
 	sdmmc_storage_t storage;
 	sdmmc_storage_init_mmc(&storage, &sdmmc, SDMMC_BUS_WIDTH_8, SDHCI_TIMING_MMC_HS400);
-	u8 *bct = (u8 *)malloc(NX_EMMC_BLOCKSIZE);
+	u8 *pkg1 = (u8 *)malloc(PKG1_MAX_SIZE);
 	sdmmc_storage_set_mmc_partition(&storage, EMMC_BOOT0);
-	sdmmc_storage_read(&storage, 0x2200 / NX_EMMC_BLOCKSIZE, 1, bct);
+	sdmmc_storage_read(&storage, PKG1_OFFSET / NX_EMMC_BLOCKSIZE, PKG1_MAX_SIZE / NX_EMMC_BLOCKSIZE, pkg1);
 	sdmmc_storage_end(&storage);
 
-	sprintf(sysnand_label + 36, "% 3d", bct[0x130] - 1);
+	u32 pk1_offset = h_cfg.t210b01 ? sizeof(bl_hdr_t210b01_t) : 0; // Skip T210B01 OEM header.
+    const pkg1_id_t *pkg1_id = pkg1_identify(pkg1 + pk1_offset);
+	sprintf(sysnand_label + 36, "% 3d", pkg1_id->kb);
 	ment_top[0].caption = sysnand_label;
 	if (h_cfg.emummc_force_disable)
 	{
-		free(bct);
+		free(pkg1);
 		return;
 	}
 
 	emummc_storage_init_mmc(&storage, &sdmmc);
-	memset(bct, 0, NX_EMMC_BLOCKSIZE);
+	memset(pkg1, 0, PKG1_MAX_SIZE);
 	emummc_storage_set_mmc_partition(&storage, EMMC_BOOT0);
-	emummc_storage_read(&storage, 0x2200 / NX_EMMC_BLOCKSIZE, 1, bct);
+	emummc_storage_read(&storage, PKG1_OFFSET / NX_EMMC_BLOCKSIZE, PKG1_MAX_SIZE / NX_EMMC_BLOCKSIZE, pkg1);
 	emummc_storage_end(&storage);
 
-	sprintf(emunand_label + 36, "% 3d", bct[0x130] - 1);
-	free(bct);
+	pkg1_id = pkg1_identify(pkg1 + pk1_offset);
+	sprintf(emunand_label + 36, "% 3d", pkg1_id->kb);
+	free(pkg1);
 	ment_top[1].caption = emunand_label;
 }
 
@@ -391,6 +394,19 @@ void ipl_main()
 		ment_top[1].type = MENT_CAPTION;
 		ment_top[1].color = 0xFF555555;
 		ment_top[1].handler = NULL;
+	}
+
+	// Grey out reboot to RCM option if on Mariko or patched console.
+	if (h_cfg.t210b01 || h_cfg.rcm_patched)
+	{
+		ment_top[6].type = MENT_CAPTION;
+		ment_top[6].color = 0xFF555555;
+		ment_top[6].handler = NULL;
+	}
+
+	if (h_cfg.rcm_patched)
+	{
+		ment_top[5].handler = reboot_full;
 	}
 
 	// Update key generations listed in menu.
