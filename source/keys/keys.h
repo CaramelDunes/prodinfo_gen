@@ -113,6 +113,13 @@ typedef struct {
     keyblob_t keyblob[KB_FIRMWARE_VERSION_600 + 1];
 } key_derivation_ctx_t;
 
+typedef struct {
+    char rights_id[0x20];
+    char equals[3];
+    char titlekey[0x20];
+    char newline[1];
+} titlekey_text_buffer_t;
+
 #define TPRINTF(text) \
     end_time = get_tmr_us(); \
     gfx_printf(text" done in %d us\n", end_time - start_time); \
