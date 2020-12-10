@@ -51,7 +51,10 @@ typedef struct {
     void *ctx;
 } storage;
 
-void storage_init(storage *this, const storage_vt *vt, void *ctx);
+static void ALWAYS_INLINE storage_init(storage *this, const storage_vt *vt, void *ctx) {
+    this->vt = vt;
+    this->ctx = ctx;
+}
 
 typedef struct {
     uint64_t offset;

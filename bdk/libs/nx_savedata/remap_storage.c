@@ -102,7 +102,7 @@ uint32_t save_remap_storage_read(remap_storage_ctx_t *ctx, void *buffer, uint64_
     }
     uint64_t in_pos = offset;
     uint32_t out_pos = 0;
-    uint32_t remaining = count;
+    uint32_t remaining = (u32)count;
 
     while (remaining) {
         uint64_t entry_pos = in_pos - entry->entry.virtual_offset;
@@ -135,7 +135,7 @@ uint32_t save_remap_storage_write(remap_storage_ctx_t *ctx, const void *buffer, 
     }
     uint64_t in_pos = offset;
     uint32_t out_pos = 0;
-    uint32_t remaining = count;
+    uint32_t remaining = (u32)count;
 
     while (remaining) {
         uint64_t entry_pos = in_pos - entry->entry.virtual_offset;

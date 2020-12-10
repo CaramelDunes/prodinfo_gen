@@ -143,6 +143,11 @@ bool save_process(save_ctx_t *ctx) {
         }
     }
 
+    if (ctx->header.layout.version > VERSION_DISF_5) {
+        EPRINTF("Unsupported save version.\nLibrary must be updated.");
+        return false;
+    }
+
     /* Initialize remap storages. */
     ctx->data_remap_storage.header = &ctx->header.main_remap_header;
     ctx->meta_remap_storage.header = &ctx->header.meta_remap_header;
@@ -177,7 +182,7 @@ bool save_process(save_ctx_t *ctx) {
         return false;
     }
 
-     /* Initialize meta remap storage. */
+    /* Initialize meta remap storage. */
     substorage_init(&ctx->meta_remap_storage.base_storage, &hierarchical_duplex_storage_vt, &ctx->duplex_storage, 0, ctx->duplex_storage.data_layer->_length);
     ctx->meta_remap_storage.map_entries = calloc(1, sizeof(remap_entry_ctx_t) * ctx->meta_remap_storage.header->map_entry_count);
     if (substorage_read(&ctx->base_storage, remap_buffer, ctx->header.layout.meta_map_entry_offset, meta_remap_entry_size) != meta_remap_entry_size) {
@@ -232,37 +237,65 @@ bool save_process(save_ctx_t *ctx) {
 }
 
 void save_free_contexts(save_ctx_t *ctx) {
-    for (unsigned int i = 0; i < ctx->data_remap_storage.header->map_segment_count; i++) {
-        free(ctx->data_remap_storage.segments[i].entries);
+    if (ctx->data_remap_storage.header) {
+        for (unsigned int i = 0; i < ctx->data_remap_storage.header->map_segment_count; i++) {
+            if (ctx->data_remap_storage.segments && ctx->data_remap_storage.segments[i].entries)
+                free(ctx->data_remap_storage.segments[i].entries);
+        }
     }
-    free(ctx->data_remap_storage.segments);
-    for (unsigned int i = 0; i < ctx->meta_remap_storage.header->map_segment_count; i++) {
-        free(ctx->meta_remap_storage.segments[i].entries);
+    if (ctx->data_remap_storage.segments)
+        free(ctx->data_remap_storage.segments);
+
+    if (ctx->meta_remap_storage.header) {
+        for (unsigned int i = 0; i < ctx->meta_remap_storage.header->map_segment_count; i++) {
+            if (ctx->meta_remap_storage.segments && ctx->meta_remap_storage.segments[i].entries)
+                free(ctx->meta_remap_storage.segments[i].entries);
+        }
     }
-    free(ctx->meta_remap_storage.segments);
-    free(ctx->data_remap_storage.map_entries);
-    free(ctx->meta_remap_storage.map_entries);
+    if (ctx->meta_remap_storage.segments)
+        free(ctx->meta_remap_storage.segments);
+
+    if (ctx->data_remap_storage.map_entries)
+        free(ctx->data_remap_storage.map_entries);
+    if (ctx->meta_remap_storage.map_entries)
+        free(ctx->meta_remap_storage.map_entries);
+
     for (unsigned int i = 0; i < 2; i++) {
-        free(ctx->duplex_storage.layers[i].bitmap.bitmap);
-        free(ctx->duplex_storage.layers[i].data_a.base_storage.ctx);
-        free(ctx->duplex_storage.layers[i].data_b.base_storage.ctx);
+        if (ctx->duplex_storage.layers[i].bitmap.bitmap)
+            free(ctx->duplex_storage.layers[i].bitmap.bitmap);
+        if (ctx->duplex_storage.layers[i].data_a.base_storage.ctx)
+            free(ctx->duplex_storage.layers[i].data_a.base_storage.ctx);
+        if (ctx->duplex_storage.layers[i].data_b.base_storage.ctx)
+            free(ctx->duplex_storage.layers[i].data_b.base_storage.ctx);
     }
-    free(ctx->duplex_storage.layers[1].bitmap_storage.base_storage.ctx);
-    free(ctx->journal_storage.map.map_storage);
-    free(ctx->journal_storage.map.entries);
+    if (ctx->duplex_storage.layers[1].bitmap_storage.base_storage.ctx)
+        free(ctx->duplex_storage.layers[1].bitmap_storage.base_storage.ctx);
+
+    if (ctx->journal_storage.map.map_storage)
+        free(ctx->journal_storage.map.map_storage);
+    if (ctx->journal_storage.map.entries)
+        free(ctx->journal_storage.map.entries);
+
     for (unsigned int i = 0; i < 4; i++) {
-        free(ctx->core_data_ivfc_storage.integrity_storages[i].block_validities);
+        if (ctx->core_data_ivfc_storage.integrity_storages[i].block_validities)
+            free(ctx->core_data_ivfc_storage.integrity_storages[i].block_validities);
         save_cached_storage_finalize(&ctx->core_data_ivfc_storage.levels[i + 1]);
     }
-    free(ctx->core_data_ivfc_storage.level_validities);
+    if (ctx->core_data_ivfc_storage.level_validities)
+        free(ctx->core_data_ivfc_storage.level_validities);
+
     if (ctx->header.layout.version >= VERSION_DISF_5) {
         for (unsigned int i = 0; i < 3; i++) {
-            free(ctx->fat_ivfc_storage.integrity_storages[i].block_validities);
+            if (ctx->fat_ivfc_storage.integrity_storages[i].block_validities)
+                free(ctx->fat_ivfc_storage.integrity_storages[i].block_validities);
             save_cached_storage_finalize(&ctx->fat_ivfc_storage.levels[i + 1]);
         }
     }
-    free(ctx->fat_ivfc_storage.level_validities);
-    free(ctx->fat_storage);
+    if (ctx->fat_ivfc_storage.level_validities)
+        free(ctx->fat_ivfc_storage.level_validities);
+
+    if (ctx->fat_storage)
+        free(ctx->fat_storage);
 }
 
 static ALWAYS_INLINE bool save_flush(save_ctx_t *ctx) {

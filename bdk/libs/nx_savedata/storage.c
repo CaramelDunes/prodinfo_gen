@@ -45,11 +45,6 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 #include <string.h>
 
-void storage_init(storage *this, const storage_vt *vt, void *ctx) {
-    this->vt = vt;
-    this->ctx = ctx;
-}
-
 void substorage_init(substorage *this, const storage_vt *vt, void *ctx, uint64_t offset, uint64_t length) {
     storage_init(&this->base_storage, vt, ctx);
     this->offset = offset;
