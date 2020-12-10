@@ -49,7 +49,7 @@ static ALWAYS_INLINE cache_block_t *cache_block_init(cached_storage_ctx_t *ctx) 
 void save_cached_storage_init(cached_storage_ctx_t *ctx, substorage *base_storage, uint32_t block_size, uint32_t cache_size) {
     memcpy(&ctx->base_storage, base_storage, sizeof(substorage));
     ctx->block_size = block_size;
-    substorage_get_size(base_storage, &ctx->length);
+    ctx->length = base_storage->length;
     ctx->cache_size = cache_size;
 
     list_init(&ctx->blocks);
@@ -69,6 +69,8 @@ static void cache_block_finalize(cache_block_t **block) {
 }
 
 void save_cached_storage_finalize(cached_storage_ctx_t *ctx) {
+    if (!ctx->blocks.next)
+        return;
     LIST_FOREACH_SAFE(curr_block, &ctx->blocks) {
         cache_block_t *block = CONTAINER_OF(curr_block, cache_block_t, link) ;
         cache_block_finalize(&block);
@@ -76,6 +78,8 @@ void save_cached_storage_finalize(cached_storage_ctx_t *ctx) {
 }
 
 static bool try_get_block_by_value(cached_storage_ctx_t *ctx, uint64_t index, cache_block_t **out_block) {
+    if (!ctx->blocks.next)
+        return false;
     LIST_FOREACH_ENTRY(cache_block_t, block, &ctx->blocks, link) {
         if (block->index == index) {
             *out_block = block;
