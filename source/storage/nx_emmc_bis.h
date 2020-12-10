@@ -225,6 +225,7 @@ typedef struct _nx_emmc_cal0_t
 	u8   console_6axis_sensor_mount_type;
 } __attribute__((packed)) nx_emmc_cal0_t;
 
+#define MAGIC_CAL0 0x304C4143
 #define NX_EMMC_CALIBRATION_OFFSET 0x4400
 #define NX_EMMC_CALIBRATION_SIZE   0x8000
 #define XTS_CLUSTER_SIZE           0x4000

@@ -358,8 +358,9 @@ static void _derive_misc_keys(key_derivation_ctx_t *keys, u32 *derivable_key_cou
         se_aes_crypt_block_ecb(8, 0, keys->header_key + 0x10, header_key_source + 0x10);
     }
 
-    if (_key_exists(keys->device_key)) {
-        _generate_kek(8, save_mac_kek_source, keys->device_key, aes_kek_generation_source, NULL);
+    if (_key_exists(keys->device_key) || (_key_exists(keys->master_key[0]) && _key_exists(keys->device_key_4x))) {
+        _get_device_key(8, keys->temp_key, 0, keys->device_key, keys->device_key_4x, keys->master_key[0]);
+        _generate_kek(8, save_mac_kek_source, keys->temp_key, aes_kek_generation_source, NULL);
         se_aes_crypt_block_ecb(8, 0, keys->save_mac_key, save_mac_key_source);
     }
 
@@ -675,7 +676,7 @@ get_titlekeys:
     se_aes_xts_crypt(1, 0, 0, 0, titlekey_buffer->read_buffer, titlekey_buffer->read_buffer, XTS_CLUSTER_SIZE, NX_EMMC_CALIBRATION_SIZE / XTS_CLUSTER_SIZE);
 
     nx_emmc_cal0_t *cal0 = (nx_emmc_cal0_t *)titlekey_buffer->read_buffer;
-    if (cal0->magic != 0x304C4143) {
+    if (cal0->magic != MAGIC_CAL0) {
         EPRINTF("Invalid CAL0 magic. Check BIS key 0.");
         goto dismount;
     }
@@ -880,12 +881,16 @@ static void _generate_kek(u32 ks, const void *key_source, void *master_key, cons
 }
 
 static void _get_device_key(u32 ks, void *out_device_key, u32 revision, const void *device_key, const void *new_device_key, const void *master_key) {
-    if (revision < KB_FIRMWARE_VERSION_400) {
+    if (revision == KB_FIRMWARE_VERSION_100_200 && !h_cfg.t210b01) {
         memcpy(out_device_key, device_key, AES_128_KEY_SIZE);
         return;
     }
 
-    revision -= KB_FIRMWARE_VERSION_400;
+    if (revision >= KB_FIRMWARE_VERSION_400) {
+        revision -= KB_FIRMWARE_VERSION_400;
+    } else {
+        revision = 0;
+    }
     u32 temp_key[AES_128_KEY_SIZE / 4] = {0};
     se_aes_key_set(ks, new_device_key, AES_128_KEY_SIZE);
     se_aes_crypt_ecb(ks, 0, temp_key, AES_128_KEY_SIZE, device_master_key_source_sources[revision], AES_128_KEY_SIZE);

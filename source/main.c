@@ -362,15 +362,6 @@ void ipl_main()
 
 	display_backlight_pwm_init();
 
-	if (h_cfg.t210b01)
-	{
-		gfx_printf("Mariko SOC detected!\nMariko is currently unsupported\nbut stay tuned...");
-		gfx_printf("\n\n Press any button to power off.");
-		display_backlight_brightness(h_cfg.backlight, 1000);
-		btn_wait();
-		power_off();
-	}
-
 	// Overclock BPMP.
 	bpmp_clk_rate_set(BPMP_CLK_DEFAULT_BOOST);
 
