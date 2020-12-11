@@ -27,6 +27,7 @@ void se_key_acc_ctrl(u32 ks, u32 flags);
 u32  se_key_acc_ctrl_get(u32 ks);
 void se_aes_key_set(u32 ks, const void *key, u32 size);
 void se_aes_iv_set(u32 ks, const void *iv);
+void se_aes_key_partial_set(u32 ks, u32 index, u32 data);
 void se_aes_key_get(u32 ks, void *key, u32 size);
 void se_aes_key_clear(u32 ks);
 void se_aes_iv_clear(u32 ks);

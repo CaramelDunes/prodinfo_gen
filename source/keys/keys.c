@@ -93,8 +93,6 @@ static ALWAYS_INLINE u32 _get_tsec_fw_size(tsec_key_data_t *key_data) {
     return key_data->blob0_size + sizeof(tsec_key_data_t) + key_data->blob1_size + key_data->blob2_size + key_data->blob3_size + key_data->blob4_size;
 }
 
-#define RELOC_META_OFF 0x7C
-
 static u8 *_read_pkg1(sdmmc_t *sdmmc, const pkg1_id_t **pkg1_id) {
     if (emummc_storage_init_mmc(&emmc_storage, sdmmc)) {
         EPRINTF("Unable to init MMC.");
@@ -123,6 +121,8 @@ static u8 *_read_pkg1(sdmmc_t *sdmmc, const pkg1_id_t **pkg1_id) {
 
     return pkg1;
 }
+
+#define RELOC_META_OFF 0x7C
 
 static bool _handle_sept(void *tsec_fw, u32 tsec_size, u32 kb, void *out_key) {
     sd_mount();
@@ -163,10 +163,7 @@ static bool _handle_sept(void *tsec_fw, u32 tsec_size, u32 kb, void *out_key) {
         }
         gfx_printf(" done");
         f_close(&fp);
-        gfx_printf("%k\nFirmware 7.x or higher detected.\n\n", colors[(color_idx++) % 6]);
-        gfx_printf("%kRenamed /sept/payload.bin", colors[(color_idx++) % 6]);
-        gfx_printf("\n     to /sept/payload.bak\n\n");
-        gfx_printf("%kCopied self to /sept/payload.bin\n", colors[(color_idx++) % 6]);
+        gfx_printf("%k\nRebooting to sept...\n\n", colors[(color_idx++) % 6]);
         sdmmc_storage_end(&emmc_storage);
         if (!reboot_to_sept((u8 *)tsec_fw, tsec_size, kb)) {
             return false;
@@ -286,7 +283,6 @@ static void _derive_master_keys_from_keyblobs(key_derivation_ctx_t *keys) {
     }
 
     se_aes_key_set(8, keys->tsec_keys, sizeof(keys->tsec_keys) / 2);
-    se_aes_key_set(9, keys->sbk, sizeof(keys->sbk));
 
     if (!emummc_storage_read(&emmc_storage, KEYBLOB_OFFSET / NX_EMMC_BLOCKSIZE, KB_FIRMWARE_VERSION_600 + 1, keyblob_block)) {
         EPRINTF("Unable to read keyblobs.");
@@ -295,7 +291,7 @@ static void _derive_master_keys_from_keyblobs(key_derivation_ctx_t *keys) {
     for (u32 i = 0; i <= KB_FIRMWARE_VERSION_600; i++, current_keyblob++) {
         minerva_periodic_training();
         se_aes_crypt_block_ecb(8, 0, keys->keyblob_key[i], keyblob_key_source[i]); // temp = unwrap(kbks, tsec)
-        se_aes_crypt_block_ecb(9, 0, keys->keyblob_key[i], keys->keyblob_key[i]); // kbk = unwrap(temp, sbk)
+        se_aes_crypt_block_ecb(14, 0, keys->keyblob_key[i], keys->keyblob_key[i]); // kbk = unwrap(temp, sbk)
         se_aes_key_set(7, keys->keyblob_key[i], sizeof(keys->keyblob_key[i]));
         se_aes_crypt_block_ecb(7, 0, keys->keyblob_mac_key[i], keyblob_mac_key_source); // kbm = unwrap(kbms, kbk)
         if (i == 0) {
@@ -429,8 +425,8 @@ static bool _get_titlekeys_from_save(u32 buf_size, const u8 *save_mac_key, title
         return false;
     }
 
-    char ticket_bin_path[32] = "/ticket.bin";
-    char ticket_list_bin_path[32] = "/ticket_list.bin";
+    const char ticket_bin_path[32] = "/ticket.bin";
+    const char ticket_list_bin_path[32] = "/ticket_list.bin";
     save_data_file_ctx_t ticket_file;
 
     if (!save_open_file(save_ctx, &ticket_file, ticket_list_bin_path, OPEN_MODE_READ)) {
@@ -685,6 +681,35 @@ static bool _derive_emmc_keys(key_derivation_ctx_t *keys, titlekey_buffer_t *tit
     return res;
 }
 
+// The security engine supports partial key override for locked keyslots
+// This allows for a manageable brute force on a PC
+// Then we can recover the Mariko KEK, BEK, unique SBK and SSK
+static void _save_mariko_partial_keys(char *text_buffer) {
+    u32 pos = 0;
+    u32 zeros[4] = {0};
+    u8 *data = malloc(4 * AES_128_KEY_SIZE);
+    for (u32 ks = 12; ks < 16; ks++) {
+        // First, encrypt zeros with complete key
+        se_aes_crypt_block_ecb(ks, 1, &data[3 * AES_128_KEY_SIZE], zeros);
+        pos += sprintf(&text_buffer[pos], "%d\n", ks);
+
+        // We only need to overwrite 3 of the dwords of the key
+        for (u32 i = 0; i < 3; i++) {
+            // Overwrite ith dword of key with zeros
+            se_aes_key_partial_set(ks, i, 0);
+            // Encrypt zeros with more of the key zeroed out
+            se_aes_crypt_block_ecb(ks, 1, &data[(2 - i) * AES_128_KEY_SIZE], zeros);
+        }
+        for (u32 i = 0; i < 4; i++) {
+            for (u32 j = 0; j < AES_128_KEY_SIZE; j++)
+                pos += sprintf(&text_buffer[pos], "%02x", data[i * AES_128_KEY_SIZE + j]);
+            pos += sprintf(&text_buffer[pos], "\n");
+        }
+    }
+    free(data);
+    sd_save_to_file(text_buffer, strlen(text_buffer), "sd:/switch/partialaes.keys");
+}
+
 static void _save_keys_to_sd(key_derivation_ctx_t *keys, titlekey_buffer_t *titlekey_buffer, const pkg1_id_t *pkg1_id, u32 start_whole_operation_time, u32 derivable_key_count) {
     char *text_buffer = NULL;
     if (!sd_mount()) {
@@ -793,6 +818,11 @@ static void _save_keys_to_sd(key_derivation_ctx_t *keys, titlekey_buffer_t *titl
     } else
         EPRINTF("Unable to save titlekeys to SD.");
 
+    if (h_cfg.t210b01) {
+        memset(text_buffer, 0, text_buffer_size);
+        _save_mariko_partial_keys(text_buffer);
+    }
+
     free(text_buffer);
 }
 
@@ -887,11 +917,12 @@ static void _save_key(const char *name, const void *data, u32 len, char *outbuf)
 }
 
 static void _save_key_family(const char *name, const void *data, u32 start_key, u32 num_keys, u32 len, char *outbuf) {
-    char temp_name[0x40] = {0};
+    char *temp_name = calloc(1, 0x40);
     for (u32 i = 0; i < num_keys; i++) {
         sprintf(temp_name, "%s_%02x", name, i + start_key);
         _save_key(temp_name, data + i * len, len, outbuf);
     }
+    free(temp_name);
 }
 
 static void _generate_kek(u32 ks, const void *key_source, void *master_key, const void *kek_seed, const void *key_seed) {

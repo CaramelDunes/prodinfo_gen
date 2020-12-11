@@ -285,6 +285,12 @@ void se_aes_key_set(u32 ks, const void *key, u32 size)
 	}
 }
 
+void se_aes_key_partial_set(u32 ks, u32 index, u32 data)
+{
+	SE(SE_KEYTABLE_REG_OFFSET) = SE_KEYTABLE_SLOT(ks) | index;
+	SE(SE_KEYTABLE_DATA0_REG_OFFSET) = data;
+}
+
 void se_aes_iv_set(u32 ks, const void *iv)
 {
 	u32 data[TEGRA_SE_AES_BLOCK_SIZE / 4];
