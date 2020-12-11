@@ -52,7 +52,7 @@ static ALWAYS_INLINE void save_allocation_table_storage_get_size(allocation_tabl
     *out_size = ctx->_length;
 }
 
-void save_allocation_table_storage_init(allocation_table_storage_ctx_t *ctx, substorage *data, allocation_table_ctx_t *table, uint32_t block_size, uint32_t initial_block);
+bool save_allocation_table_storage_init(allocation_table_storage_ctx_t *ctx, substorage *data, allocation_table_ctx_t *table, uint32_t block_size, uint32_t initial_block);
 uint32_t save_allocation_table_storage_read(allocation_table_storage_ctx_t *ctx, void *buffer, uint64_t offset, uint64_t count);
 uint32_t save_allocation_table_storage_write(allocation_table_storage_ctx_t *ctx, const void *buffer, uint64_t offset, uint64_t count);
 bool save_allocation_table_storage_set_size(allocation_table_storage_ctx_t *ctx, uint64_t size);

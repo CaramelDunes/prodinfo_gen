@@ -20,9 +20,16 @@
 //#define IPL_STACK_TOP  0x4003FF00
 /* --- BIT/BCT: 0x40000000 - 0x40003000 --- */
 /* ---     IPL: 0x40003000 - 0x40028000 --- */
+#define LDR_LOAD_ADDR     0x40007000
+
 #define IPL_LOAD_ADDR     0x40003000
 #define  IPL_SZ_MAX          0x20000 // 128KB.
-//#define IRAM_LIB_ADDR     0x4002B000
+
+/* --- XUSB EP context and TRB ring buffers --- */
+#define XUSB_RING_ADDR    0x40020000
+
+#define SECMON_MIN_START  0x4002B000
+
 #define SDRAM_PARAMS_ADDR 0x40030000 // SDRAM extraction buffer during sdram init.
 #define CBFS_DRAM_EN_ADDR 0x4003e000 // u32.
 
@@ -44,6 +51,10 @@
 #define RAM_DISK_ADDR     0xA4000000
 #define NX_BIS_CACHE_ADDR RAM_DISK_ADDR
 #define  RAM_DISK_SZ      0x41000000 // 1040MB.
+
+// L4T Kernel Panic Storage (PSTORE).
+#define PSTORE_ADDR   0xB0000000
+#define  PSTORE_SZ      0x200000 // 2MB.
 
 //#define DRAM_LIB_ADDR    0xE0000000
 /* --- Chnldr: 252MB 0xC03C0000 - 0xCFFFFFFF --- */ //! Only used when chainloading.

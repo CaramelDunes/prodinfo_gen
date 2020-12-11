@@ -52,7 +52,7 @@ void save_ivfc_storage_init(integrity_verification_storage_ctx_t *ctx, integrity
 /* buffer must have size count + 0x20 for salt to by copied in at offset 0. */
 static ALWAYS_INLINE void save_ivfc_storage_do_hash(integrity_verification_storage_ctx_t *ctx, uint8_t *out_hash, void *buffer, uint64_t count) {
     memcpy(buffer, ctx->salt, sizeof(ctx->salt));
-    se_calc_sha256(out_hash, buffer, count + sizeof(ctx->salt));
+    se_calc_sha256_oneshot(out_hash, buffer, count + sizeof(ctx->salt));
     out_hash[0x1F] |= 0x80;
 }
 
@@ -81,7 +81,7 @@ bool save_ivfc_storage_read(integrity_verification_storage_ctx_t *ctx, void *buf
         return false;
     }
 
-    uint8_t hash_buffer[0x20] = {0};
+    uint8_t hash_buffer[0x20] __attribute__((aligned(4))) = {0};
     uint64_t hash_pos = block_index * sizeof(hash_buffer);
 
     if (substorage_read(&ctx->hash_storage, hash_buffer, hash_pos, sizeof(hash_buffer)) != sizeof(hash_buffer))
@@ -99,17 +99,16 @@ bool save_ivfc_storage_read(integrity_verification_storage_ctx_t *ctx, void *buf
         return false;
     }
 
+    memcpy(buffer, data_buffer + 0x20 + (offset % ctx->base_storage.sector_size), count);
+
     if (ctx->integrity_check_level && ctx->block_validities[block_index] != VALIDITY_UNCHECKED) {
-        memcpy(buffer, data_buffer + 0x20 + (offset % ctx->base_storage.sector_size), count);
         free(data_buffer);
         return true;
     }
 
-    uint8_t hash[0x20] = {0};
+    uint8_t hash[0x20] __attribute__((aligned(4))) = {0};
     save_ivfc_storage_do_hash(ctx, hash, data_buffer, ctx->base_storage.sector_size);
-    memcpy(buffer, data_buffer + 0x20 + (offset % ctx->base_storage.sector_size), count);
     free(data_buffer);
-
     if (memcmp(hash_buffer, hash, sizeof(hash_buffer)) == 0) {
         ctx->block_validities[block_index] = VALIDITY_VALID;
     } else {
@@ -127,7 +126,7 @@ bool save_ivfc_storage_write(integrity_verification_storage_ctx_t *ctx, const vo
     uint64_t block_index = offset / ctx->base_storage.sector_size;
     uint64_t hash_pos = block_index * 0x20;
 
-    uint8_t hash[0x20] = {0};
+    uint8_t hash[0x20] __attribute__((aligned(4))) = {0};
     uint8_t *data_buffer = calloc(1, ctx->base_storage.sector_size + 0x20);
     if (count < ctx->base_storage.sector_size) {
         if (substorage_read(&ctx->base_storage.base_storage, data_buffer + 0x20, offset - (offset % ctx->base_storage.sector_size), ctx->base_storage.sector_size) != ctx->base_storage.sector_size) {

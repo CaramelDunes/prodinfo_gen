@@ -42,6 +42,9 @@
 #define HOS_PKG11_MAGIC 0x31314B50
 #define HOS_EKS_MAGIC   0x30534B45
 
+// Use official Mariko secmon when in stock.
+//#define HOS_MARIKO_STOCK_SECMON
+
 typedef struct _exo_ctxt_t
 {
 	bool fs_is_510;
@@ -66,17 +69,17 @@ typedef struct _hos_eks_bis_keys_t
 typedef struct _hos_eks_mbr_t
 {
 	u32 magic;
-	u8  enabled[6];
+	u8  enabled[5];
 	u8  enabled_bis;
-	u8  rsvd;
-	u32 sbk_low;
+	u8  rsvd[2];
+	u32 lot0;
 	u8  dkg[0x10];
 	u8  dkk[0x10];
-	hos_eks_keys_t keys[6];
+	hos_eks_keys_t keys[5];
 	hos_eks_bis_keys_t bis_keys[3];
 } hos_eks_mbr_t;
 
-static_assert(sizeof(hos_eks_mbr_t) == 336, "HOS EKS size is wrong!");
+static_assert(sizeof(hos_eks_mbr_t) == 304, "HOS EKS size is wrong!");
 
 typedef struct _launch_ctxt_t
 {
@@ -90,6 +93,8 @@ typedef struct _launch_ctxt_t
 	u32   warmboot_size;
 	void *secmon;
 	u32   secmon_size;
+	void *exofatal;
+	u32   exofatal_size;
 
 	void *pkg2;
 	u32   pkg2_size;
@@ -97,6 +102,7 @@ typedef struct _launch_ctxt_t
 
 	void  *kernel;
 	u32    kernel_size;
+
 	link_t kip1_list;
 	char*  kip1_patches;
 
@@ -105,7 +111,7 @@ typedef struct _launch_ctxt_t
 	bool debugmode;
 	bool stock;
 	bool atmosphere;
-	bool fss0_enable_experimental;
+	bool fss0_experimental;
 	bool emummc_forced;
 
 	exo_ctxt_t exo_ctx;

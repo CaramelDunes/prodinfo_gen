@@ -37,7 +37,7 @@
 /**
  * Defines the SDRAM parameter structure
  */
-typedef struct _sdram_params
+typedef struct _sdram_params_t210_t
 {
 	/* Specifies the type of memory device */
 	u32 memory_type;
@@ -925,6 +925,6 @@ typedef struct _sdram_params
 	u32 mc_mts_carveout_size_mb;
 	/* Specifies the value for MC_MTS_CARVEOUT_REG_CTRL */
 	u32 mc_mts_carveout_reg_ctrl;
-} sdram_params_t;
+} sdram_params_t210_t;
 
 #endif

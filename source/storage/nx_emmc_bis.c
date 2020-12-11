@@ -95,7 +95,7 @@ static int _nx_aes_xts_crypt_sec(u32 tweak_ks, u32 crypt_ks, u32 enc, u8 *tweak,
 	for (u32 i = 0; i < (tweak_exp << 5); i++)
 		_gf256_mul_x_le(tweak);
 
-	u8 orig_tweak[0x10];
+	u8 orig_tweak[0x10] __attribute__((aligned(4)));
 	memcpy(orig_tweak, tweak, 0x10);
 
 	// We are assuming a 0x10-aligned sector size in this implementation.
@@ -131,7 +131,7 @@ static int nx_emmc_bis_write_block(u32 sector, u32 count, void *buff, bool force
 	if (!system_part)
 		return 3; // Not ready.
 
-	u8 tweak[0x10];
+	u8 tweak[0x10] __attribute__((aligned(4)));
 	u32 cluster = sector / SECTORS_PER_CLUSTER;
 	u32 aligned_sector = cluster * SECTORS_PER_CLUSTER;
 	u32 sector_index_in_cluster = sector % SECTORS_PER_CLUSTER;
@@ -186,8 +186,8 @@ static int nx_emmc_bis_read_block(u32 sector, u32 count, void *buff)
 
 	static u32 prev_cluster = -1;
 	static u32 prev_sector = 0;
-	static u8 tweak[0x10];
-	u8 cache_tweak[0x10];
+	static u8 tweak[0x10] __attribute__((aligned(4)));
+	u8 cache_tweak[0x10] __attribute__((aligned(4)));
 
 	u32 tweak_exp = 0;
 	bool regen_tweak = true;

@@ -10,8 +10,8 @@ include $(DEVKITARM)/base_rules
 
 IPL_LOAD_ADDR := 0x40003000
 LPVERSION_MAJOR := 1
-LPVERSION_MINOR := 8
-LPVERSION_BUGFX := 5
+LPVERSION_MINOR := 9
+LPVERSION_BUGFX := 0
 
 ################################################################################
 
@@ -40,8 +40,13 @@ CUSTOMDEFINES := -DIPL_LOAD_ADDR=$(IPL_LOAD_ADDR)
 CUSTOMDEFINES += -DLP_VER_MJ=$(LPVERSION_MAJOR) -DLP_VER_MN=$(LPVERSION_MINOR) -DLP_VER_BF=$(LPVERSION_BUGFX)
 CUSTOMDEFINES += -DGFX_INC=$(GFX_INC) -DFFCFG_INC=$(FFCFG_INC)
 
+# 0: UART_A, 1: UART_B.
+#CUSTOMDEFINES += -DDEBUG_UART_PORT=0
+
+#CUSTOMDEFINES += -DDEBUG
+
 ARCH := -march=armv4t -mtune=arm7tdmi -mthumb -mthumb-interwork
-CFLAGS = $(ARCH) -O2 -nostdlib -ffunction-sections -fno-inline -fdata-sections -fomit-frame-pointer -std=gnu11 -Wall $(CUSTOMDEFINES)
+CFLAGS = $(ARCH) -Os -nostdlib -ffunction-sections -fdata-sections -fomit-frame-pointer -fno-inline -std=gnu11 -Wall $(CUSTOMDEFINES)
 LDFLAGS = $(ARCH) -nostartfiles -lgcc -Wl,--nmagic,--gc-sections -Xlinker --defsym=IPL_LOAD_ADDR=$(IPL_LOAD_ADDR)
 
 ################################################################################

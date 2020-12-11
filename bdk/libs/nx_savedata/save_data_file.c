@@ -38,7 +38,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 void save_data_file_init(save_data_file_ctx_t *ctx, allocation_table_storage_ctx_t *base_storage, const char *path, hierarchical_save_file_table_ctx_t *file_table, uint64_t size, open_mode_t mode) {
     ctx->mode = mode;
-    memcpy(&ctx->base_storage, base_storage, sizeof(ctx->base_storage));
+    memcpy(&ctx->base_storage, base_storage, sizeof(allocation_table_storage_ctx_t));
     ctx->path = path;
     ctx->file_table = file_table;
     ctx->size = size;

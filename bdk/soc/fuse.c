@@ -20,9 +20,9 @@
 #include <string.h>
 
 #include <soc/fuse.h>
+#include <soc/hw_init.h>
 #include <soc/t210.h>
-
-#define ARRAYSIZE(x) (sizeof(x) / sizeof(*x))
+#include <utils/types.h>
 
 static const u32 evp_thunk_template[] = {
 	0xe92d0007, //   STMFD   SP!, {R0-R2}
@@ -62,10 +62,46 @@ u32 fuse_read_odm(u32 idx)
 
 u32 fuse_read_odm_keygen_rev()
 {
-	if ((fuse_read_odm(4) & 0x800) && fuse_read_odm(0) == 0x8E61ECAE && fuse_read_odm(1) == 0xF2BA3BB2)
+	bool has_new_keygen;
+
+	// Check if it has new keygen.
+	if (hw_get_chip_id() == GP_HIDREV_MAJOR_T210B01)
+		has_new_keygen = true;
+	else
+		has_new_keygen = (fuse_read_odm(4) & 0x800) && fuse_read_odm(0) == 0x8E61ECAE && fuse_read_odm(1) == 0xF2BA3BB2;
+
+	if (has_new_keygen)
 		return (fuse_read_odm(2) & 0x1F);
 
 	return 0;
+}
+
+u32 fuse_read_hw_type()
+{
+	if (hw_get_chip_id() == GP_HIDREV_MAJOR_T210B01)
+	{
+		switch ((fuse_read_odm(4) & 0xF0000) >> 16)
+		{
+		case 1:
+			return FUSE_NX_HW_TYPE_IOWA;
+		case 2:
+			return FUSE_NX_HW_TYPE_HOAG;
+		}
+	}
+
+	return FUSE_NX_HW_TYPE_ICOSA;
+}
+
+u8 fuse_count_burnt(u32 val)
+{
+	u8 burnt_fuses = 0;
+	for (u32 i = 0; i < 32; i++)
+	{
+		if ((val >> i) & 1)
+			burnt_fuses++;
+	}
+
+	return burnt_fuses;
 }
 
 void fuse_wait_idle()
@@ -87,7 +123,9 @@ u32 fuse_read(u32 addr)
 
 void fuse_read_array(u32 *words)
 {
-	for (u32 i = 0; i < 192; i++)
+	u32 array_size = (hw_get_chip_id() == GP_HIDREV_MAJOR_T210B01) ? 256 : 192;
+
+	for (u32 i = 0; i < array_size; i++)
 		words[i] = fuse_read(i);
 }
 
@@ -133,7 +171,7 @@ static int _patch_hash_one(u32 *word)
 	{
 		return 3;
 	}
-	for (u32 i = 0; i < ARRAYSIZE(hash_vals); i++)
+	for (u32 i = 0; i < ARRAY_SIZE(hash_vals); i++)
 	{
 		if (hash_vals[i] == hash)
 		{
@@ -222,7 +260,7 @@ int fuse_read_ipatch(void (*ipatch)(u32 offset, u32 value))
 	while (word_count)
 	{
 		total_read += word_count;
-		if (total_read >= ARRAYSIZE(words))
+		if (total_read >= ARRAY_SIZE(words))
 		{
 			break;
 		}
@@ -279,7 +317,7 @@ int fuse_read_evp_thunk(u32 *iram_evp_thunks, u32 *iram_evp_thunks_len)
 	while (word_count)
 	{
 		total_read += word_count;
-		if (total_read >= ARRAYSIZE(words))
+		if (total_read >= ARRAY_SIZE(words))
 		{
 			break;
 		}
@@ -328,8 +366,8 @@ int fuse_read_evp_thunk(u32 *iram_evp_thunks, u32 *iram_evp_thunks_len)
 
 bool fuse_check_patched_rcm()
 {
-	// Check if XUSB in use.
-	if (FUSE(FUSE_RESERVED_SW) & (1<<7))
+	// Check if XUSB in use or Tegra X1+.
+	if (FUSE(FUSE_RESERVED_SW) & (1<<7) || hw_get_chip_id() == GP_HIDREV_MAJOR_T210B01)
 		return true;
 
 	// Check if RCM is ipatched.

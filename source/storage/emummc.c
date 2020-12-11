@@ -136,7 +136,7 @@ int emummc_storage_init_mmc(sdmmc_storage_t *storage, sdmmc_t *sdmmc)
 	FILINFO fno;
 	emu_cfg.active_part = 0;
 
-	// Always init eMMC even when in emuMMC. eMMC is needed from theh emuMMC driver anyway.
+	// Always init eMMC even when in emuMMC. eMMC is needed from the emuMMC driver anyway.
 	if (!sdmmc_storage_init_mmc(storage, sdmmc, SDMMC_BUS_WIDTH_8, SDHCI_TIMING_MMC_HS400))
 		return 2;
 
@@ -276,7 +276,7 @@ int emummc_storage_set_mmc_partition(sdmmc_storage_t *storage, u32 partition)
 	emu_cfg.active_part = partition;
 
 	if (!emu_cfg.enabled || h_cfg.emummc_force_disable)
-		return sdmmc_storage_set_mmc_partition(storage, partition);
+		sdmmc_storage_set_mmc_partition(storage, partition);
 	else if (emu_cfg.sector)
 		return 1;
 	else

@@ -98,13 +98,13 @@ static bool save_process_header(save_ctx_t *ctx) {
     ctx->data_ivfc_master = (uint8_t *)&ctx->header + ctx->header.layout.ivfc_master_hash_offset_a;
     ctx->fat_ivfc_master = (uint8_t *)&ctx->header + ctx->header.layout.fat_ivfc_master_hash_a;
 
-    uint8_t hash[0x20];
+    uint8_t hash[0x20] __attribute__((aligned(4)));
     uint32_t hashed_data_offset = sizeof(ctx->header.layout) + sizeof(ctx->header.cmac) + sizeof(ctx->header._0x10);
     uint32_t hashed_data_size = sizeof(ctx->header) - hashed_data_offset;
-    se_calc_sha256(hash, (uint8_t *)&ctx->header + hashed_data_offset, hashed_data_size);
-    ctx->header_hash_validity = memcmp(hash, ctx->header.layout.hash, 0x20) == 0 ? VALIDITY_VALID : VALIDITY_INVALID;
+    se_calc_sha256_oneshot(hash, (uint8_t *)&ctx->header + hashed_data_offset, hashed_data_size);
+    ctx->header_hash_validity = memcmp(hash, ctx->header.layout.hash, sizeof(hash)) == 0 ? VALIDITY_VALID : VALIDITY_INVALID;
 
-    unsigned char cmac[0x10] = {};
+    uint8_t cmac[0x10] __attribute__((aligned(4)));
     se_aes_key_set(10, ctx->save_mac_key, 0x10);
     se_aes_cmac(10, cmac, 0x10, &ctx->header.layout, sizeof(ctx->header.layout));
     if (memcmp(cmac, &ctx->header.cmac, 0x10) == 0) {
@@ -126,14 +126,14 @@ bool save_process(save_ctx_t *ctx) {
     substorage_init(&ctx->base_storage, &file_storage_vt, ctx->file, 0, f_size(ctx->file));
     /* Try to parse Header A. */
     if (substorage_read(&ctx->base_storage, &ctx->header, 0, sizeof(ctx->header)) != sizeof(ctx->header)) {
-        EPRINTF("Failed to read save header!\n");
+        EPRINTF("Failed to read save header A!\n");
         return false;
     }
 
     if (!save_process_header(ctx) || (ctx->header_hash_validity == VALIDITY_INVALID)) {
         /* Try to parse Header B. */
         if (substorage_read(&ctx->base_storage, &ctx->header, sizeof(ctx->header), sizeof(ctx->header)) != sizeof(ctx->header)) {
-            EPRINTF("Failed to read save header!\n");
+            EPRINTF("Failed to read save header B!\n");
             return false;
         }
 
@@ -143,14 +143,22 @@ bool save_process(save_ctx_t *ctx) {
         }
     }
 
+    if (ctx->header.layout.version > VERSION_DISF_5) {
+        EPRINTF("Unsupported save version.\nLibrary must be updated.");
+        return false;
+    }
+
     /* Initialize remap storages. */
     ctx->data_remap_storage.header = &ctx->header.main_remap_header;
     ctx->meta_remap_storage.header = &ctx->header.meta_remap_header;
 
+    u32 data_remap_entry_size = sizeof(remap_entry_t) * ctx->data_remap_storage.header->map_entry_count;
+    u32 meta_remap_entry_size = sizeof(remap_entry_t) * ctx->meta_remap_storage.header->map_entry_count;
+
     substorage_init(&ctx->data_remap_storage.base_storage, &file_storage_vt, ctx->file, ctx->header.layout.file_map_data_offset, ctx->header.layout.file_map_data_size);
     ctx->data_remap_storage.map_entries = calloc(1, sizeof(remap_entry_ctx_t) * ctx->data_remap_storage.header->map_entry_count);
-    uint8_t *remap_buffer = malloc(MAX(ctx->data_remap_storage.header->map_entry_count, ctx->meta_remap_storage.header->map_entry_count) * sizeof(remap_entry_t));
-    if (substorage_read(&ctx->base_storage, remap_buffer, ctx->header.layout.file_map_entry_offset, sizeof(remap_entry_t) * ctx->data_remap_storage.header->map_entry_count) != sizeof(remap_entry_t) * ctx->data_remap_storage.header->map_entry_count) {
+    uint8_t *remap_buffer = malloc(MAX(data_remap_entry_size, meta_remap_entry_size));
+    if (substorage_read(&ctx->base_storage, remap_buffer, ctx->header.layout.file_map_entry_offset, data_remap_entry_size) != data_remap_entry_size) {
         EPRINTF("Failed to read data remap table!");
         free(remap_buffer);
         return false;
@@ -174,10 +182,10 @@ bool save_process(save_ctx_t *ctx) {
         return false;
     }
 
-     /* Initialize meta remap storage. */
+    /* Initialize meta remap storage. */
     substorage_init(&ctx->meta_remap_storage.base_storage, &hierarchical_duplex_storage_vt, &ctx->duplex_storage, 0, ctx->duplex_storage.data_layer->_length);
     ctx->meta_remap_storage.map_entries = calloc(1, sizeof(remap_entry_ctx_t) * ctx->meta_remap_storage.header->map_entry_count);
-    if (substorage_read(&ctx->base_storage, remap_buffer, ctx->header.layout.meta_map_entry_offset, sizeof(remap_entry_t) * ctx->meta_remap_storage.header->map_entry_count) != sizeof(remap_entry_t) * ctx->meta_remap_storage.header->map_entry_count) {
+    if (substorage_read(&ctx->base_storage, remap_buffer, ctx->header.layout.meta_map_entry_offset, meta_remap_entry_size) != meta_remap_entry_size) {
         EPRINTF("Failed to read meta remap table!");
         free(remap_buffer);
         return false;
@@ -225,43 +233,69 @@ bool save_process(save_ctx_t *ctx) {
     }
 
     /* Initialize core save filesystem. */
-    save_data_file_system_core_init(&ctx->save_filesystem_core, &ctx->core_data_ivfc_storage.base_storage, ctx->fat_storage, &ctx->header.save_header);
-
-    return true;
+    return save_data_file_system_core_init(&ctx->save_filesystem_core, &ctx->core_data_ivfc_storage.base_storage, ctx->fat_storage, &ctx->header.save_header);
 }
 
 void save_free_contexts(save_ctx_t *ctx) {
-    for (unsigned int i = 0; i < ctx->data_remap_storage.header->map_segment_count; i++) {
-        free(ctx->data_remap_storage.segments[i].entries);
+    if (ctx->data_remap_storage.header) {
+        for (unsigned int i = 0; i < ctx->data_remap_storage.header->map_segment_count; i++) {
+            if (ctx->data_remap_storage.segments && ctx->data_remap_storage.segments[i].entries)
+                free(ctx->data_remap_storage.segments[i].entries);
+        }
     }
-    free(ctx->data_remap_storage.segments);
-    for (unsigned int i = 0; i < ctx->meta_remap_storage.header->map_segment_count; i++) {
-        free(ctx->meta_remap_storage.segments[i].entries);
+    if (ctx->data_remap_storage.segments)
+        free(ctx->data_remap_storage.segments);
+
+    if (ctx->meta_remap_storage.header) {
+        for (unsigned int i = 0; i < ctx->meta_remap_storage.header->map_segment_count; i++) {
+            if (ctx->meta_remap_storage.segments && ctx->meta_remap_storage.segments[i].entries)
+                free(ctx->meta_remap_storage.segments[i].entries);
+        }
     }
-    free(ctx->meta_remap_storage.segments);
-    free(ctx->data_remap_storage.map_entries);
-    free(ctx->meta_remap_storage.map_entries);
+    if (ctx->meta_remap_storage.segments)
+        free(ctx->meta_remap_storage.segments);
+
+    if (ctx->data_remap_storage.map_entries)
+        free(ctx->data_remap_storage.map_entries);
+    if (ctx->meta_remap_storage.map_entries)
+        free(ctx->meta_remap_storage.map_entries);
+
     for (unsigned int i = 0; i < 2; i++) {
-        free(ctx->duplex_storage.layers[i].bitmap.bitmap);
-        free(ctx->duplex_storage.layers[i].data_a.base_storage.ctx);
-        free(ctx->duplex_storage.layers[i].data_b.base_storage.ctx);
+        if (ctx->duplex_storage.layers[i].bitmap.bitmap)
+            free(ctx->duplex_storage.layers[i].bitmap.bitmap);
+        if (ctx->duplex_storage.layers[i].data_a.base_storage.ctx)
+            free(ctx->duplex_storage.layers[i].data_a.base_storage.ctx);
+        if (ctx->duplex_storage.layers[i].data_b.base_storage.ctx)
+            free(ctx->duplex_storage.layers[i].data_b.base_storage.ctx);
     }
-    free(ctx->duplex_storage.layers[1].bitmap_storage.base_storage.ctx);
-    free(ctx->journal_storage.map.map_storage);
-    free(ctx->journal_storage.map.entries);
+    if (ctx->duplex_storage.layers[1].bitmap_storage.base_storage.ctx)
+        free(ctx->duplex_storage.layers[1].bitmap_storage.base_storage.ctx);
+
+    if (ctx->journal_storage.map.map_storage)
+        free(ctx->journal_storage.map.map_storage);
+    if (ctx->journal_storage.map.entries)
+        free(ctx->journal_storage.map.entries);
+
     for (unsigned int i = 0; i < 4; i++) {
-        free(ctx->core_data_ivfc_storage.integrity_storages[i].block_validities);
+        if (ctx->core_data_ivfc_storage.integrity_storages[i].block_validities)
+            free(ctx->core_data_ivfc_storage.integrity_storages[i].block_validities);
         save_cached_storage_finalize(&ctx->core_data_ivfc_storage.levels[i + 1]);
     }
-    free(ctx->core_data_ivfc_storage.level_validities);
+    if (ctx->core_data_ivfc_storage.level_validities)
+        free(ctx->core_data_ivfc_storage.level_validities);
+
     if (ctx->header.layout.version >= VERSION_DISF_5) {
         for (unsigned int i = 0; i < 3; i++) {
-            free(ctx->fat_ivfc_storage.integrity_storages[i].block_validities);
+            if (ctx->fat_ivfc_storage.integrity_storages[i].block_validities)
+                free(ctx->fat_ivfc_storage.integrity_storages[i].block_validities);
             save_cached_storage_finalize(&ctx->fat_ivfc_storage.levels[i + 1]);
         }
     }
-    free(ctx->fat_ivfc_storage.level_validities);
-    free(ctx->fat_storage);
+    if (ctx->fat_ivfc_storage.level_validities)
+        free(ctx->fat_ivfc_storage.level_validities);
+
+    if (ctx->fat_storage)
+        free(ctx->fat_storage);
 }
 
 static ALWAYS_INLINE bool save_flush(save_ctx_t *ctx) {
@@ -292,7 +326,7 @@ bool save_commit(save_ctx_t *ctx) {
     uint32_t hashed_data_offset = sizeof(ctx->header.layout) + sizeof(ctx->header.cmac) + sizeof(ctx->header._0x10);
     uint32_t hashed_data_size = sizeof(ctx->header) - hashed_data_offset;
     uint8_t *header = (uint8_t *)&ctx->header;
-    se_calc_sha256(ctx->header.layout.hash, header + hashed_data_offset, hashed_data_size);
+    se_calc_sha256_oneshot(ctx->header.layout.hash, header + hashed_data_offset, hashed_data_size);
 
     se_aes_key_set(10, ctx->save_mac_key, 0x10);
     se_aes_cmac(10, ctx->header.cmac, 0x10, &ctx->header.layout, sizeof(ctx->header.layout));
