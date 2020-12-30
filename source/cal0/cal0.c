@@ -33,6 +33,7 @@ static const u8 eticket_rsa_kekek_source[0x10] = {0x46, 0x6e, 0x57, 0xb7, 0x4a, 
 static const u8 eticket_rsa_kek_source[0x10] = {0xdb, 0xa4, 0x51, 0x12, 0x4c, 0xa0, 0xa9, 0x83, 0x68, 0x14, 0xf5, 0xed, 0x95, 0xe3, 0x12, 0x5b};
 static const u8 aes_kek_seed_01[0x10] = {
     0xA2, 0xAB, 0xBF, 0x9C, 0x92, 0x2F, 0xBB, 0xE3, 0x78, 0x79, 0x9B, 0xC0, 0xCC, 0xEA, 0xA5, 0x74};
+    static const u8 aes_kek_seed_02 ={ 0x57, 0xE2, 0xD9, 0x45, 0xE4, 0x92, 0xF4, 0xFD, 0xC3, 0xF9, 0x86, 0x38, 0x89, 0x78, 0x9F, 0x3C };
 static const u8 aes_kek_seed_03[0x10] = {
     0xE5, 0x4D, 0x9A, 0x02, 0xF0, 0x4F, 0x5F, 0xA8, 0xAD, 0x76, 0x0A, 0xF6, 0x32, 0x95, 0x59, 0xBB};
 static const u8 aes_kek_generation_source[0x10] = {
@@ -84,7 +85,8 @@ bool valid_own_prodinfo(u8 *prodinfo_buffer, u32 prodinfo_size, u8 *master_key_0
 {
     return valid_donor_prodinfo(prodinfo_buffer, prodinfo_size) &&
            valid_extended_rsa_2048_eticket_key(prodinfo_buffer, master_key_0) &&
-           valid_extended_ecc_b233_device_key(prodinfo_buffer, master_key_0);
+           valid_extended_ecc_b233_device_key(prodinfo_buffer, master_key_0) &&
+           valid_extended_gamecard_key(prodinfo_buffer, master_key_0);
 }
 
 bool valid_crcs(u8 *prodinfo_buffer, u32 prodinfo_size)
@@ -174,8 +176,8 @@ static void _fix_gcm_content(const u8 *ctr, u8 *ciphertext, u32 ciphertext_size,
 
     se_aes_crypt_ctr(KEYSLOT_SWITCH_TEMPKEY, plaintext, plaintext_size, ciphertext, plaintext_size, ctr);
 
-    // u64 file_device_id = (read64be(plaintext, plaintext_size - 0x8) & 0x00FFFFFFFFFFFFFFULL);
-    // gfx_hexdump(0, (const u8 *)&file_device_id, 0x08);
+    u64 file_device_id = *(u64*)(plaintext + plaintext_size - 0x8) & 0x00FFFFFFFFFFFFFFULL;
+    gfx_hexdump(0, (const u8 *)&file_device_id, 0x08);
 
     // Replace device id
     write64be(plaintext, plaintext_size - 0x8, device_id);
@@ -237,6 +239,32 @@ void write_extended_ecc_b233_device_key(u8 *prodinfo_buffer, u64 device_id, u8 *
     u8 *ciphertext = ctr + 0x10;
 
     _fix_gcm_content(ctr, ciphertext, 0x30, device_id, KEYSLOT_SWITCH_TEMPKEY);
+}
+
+bool valid_extended_gamecard_key(u8 *prodinfo_buffer, u8 *master_key_0)
+{
+    u8 the_key[0x10] = {0};
+    unseal_key(es_kek_source, prod_kekek_source, master_key_0, the_key, 1);
+    se_aes_key_set(KEYSLOT_SWITCH_TEMPKEY, the_key, 0x10);
+
+    u8 *ctr = prodinfo_buffer + 0x3C20;
+    u8 *ciphertext = ctr + 0x10;
+
+    int valid = _is_valid_gcm_content(ctr, ciphertext, 0x110, KEYSLOT_SWITCH_TEMPKEY);
+
+    return valid;
+}
+
+void write_extended_gamecard_key(u8 *prodinfo_buffer, u64 device_id, u8 *master_key_0)
+{
+    u8 the_key[0x10] = {0};
+    unseal_key(es_kek_source, prod_kekek_source, master_key_0, the_key, 1);
+    se_aes_key_set(KEYSLOT_SWITCH_TEMPKEY, the_key, 0x10);
+
+    u8 *ctr = prodinfo_buffer + 0x3C20;
+    u8 *ciphertext = ctr + 0x10;
+
+    _fix_gcm_content(ctr, ciphertext, 0x110, device_id, KEYSLOT_SWITCH_TEMPKEY);
 }
 
 bool valid_ecc_b233_device_certificate(u8 *prodinfo_buffer)
