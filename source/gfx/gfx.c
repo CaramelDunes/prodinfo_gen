@@ -122,17 +122,14 @@ static const u8 _gfx_font[] = {
 	0x00, 0x00, 0x00, 0x4C, 0x32, 0x00, 0x00, 0x00  // Char 126 (~)
 };
 
-void gfx_init_ctxt(u32 *fb, u32 width, u32 height, u32 stride)
-{
-	gfx_ctxt.fb = fb;
-	gfx_ctxt.width = width;
-	gfx_ctxt.height = height;
-	gfx_ctxt.stride = stride;
-}
-
 void gfx_clear_grey(u8 color)
 {
 	memset(gfx_ctxt.fb, color, gfx_ctxt.width * gfx_ctxt.height * 4);
+}
+
+void gfx_clear_partial_grey(u8 color, u32 pos_x, u32 height)
+{
+	memset(gfx_ctxt.fb + pos_x * gfx_ctxt.stride, color, height * 4 * gfx_ctxt.stride);
 }
 
 void gfx_clear_color(u32 color)
@@ -141,9 +138,12 @@ void gfx_clear_color(u32 color)
 		gfx_ctxt.fb[i] = color;
 }
 
-void gfx_clear_partial_grey(u8 color, u32 pos_x, u32 height)
+void gfx_init_ctxt(u32 *fb, u32 width, u32 height, u32 stride)
 {
-	memset(gfx_ctxt.fb + pos_x * gfx_ctxt.stride, color, height * 4 * gfx_ctxt.stride);
+	gfx_ctxt.fb = fb;
+	gfx_ctxt.width = width;
+	gfx_ctxt.height = height;
+	gfx_ctxt.stride = stride;
 }
 
 void gfx_con_init()
@@ -452,6 +452,50 @@ void gfx_hexdump(u32 base, const u8 *buf, u32 len)
 			}
 			gfx_putc('\n');
 		}
+	}
+	gfx_putc('\n');
+	gfx_con.fntsz = prevFontSize;
+}
+
+void gfx_hexdiff(u32 base, const u8 *buf1, const u8 *buf2, u32 len)
+{
+	if (gfx_con.mute)
+		return;
+
+	if (memcmp(buf1, buf2, len) == 0)
+	{
+		gfx_printf("Diff: No differences found.\n");
+		return;
+	}
+
+	u8 prevFontSize = gfx_con.fntsz;
+	gfx_con.fntsz = 8;
+	for(u32 i = 0; i < len; i+=0x10)
+	{
+		u32 bytes_left = len - i < 0x10 ? len - i : 0x10;
+		if (memcmp(buf1 + i, buf2 + i, bytes_left) == 0)
+			continue;
+		gfx_printf("Diff 1: %08x: ", base + i);
+		for (u32 j = 0; j < bytes_left; j++)
+		{
+			if (buf1[i+j] != buf2[i+j])
+				gfx_con.fgcol = COLOR_ORANGE;
+			gfx_printf("%02x ", buf1[i+j]);
+			gfx_con.fgcol = 0xFFCCCCCC;
+		}
+		gfx_puts("| ");
+		gfx_putc('\n');
+		gfx_printf("Diff 2: %08x: ", base + i);
+		for (u32 j = 0; j < bytes_left; j++)
+		{
+			if (buf1[i+j] != buf2[i+j])
+				gfx_con.fgcol = COLOR_ORANGE;
+			gfx_printf("%02x ", buf2[i+j]);
+			gfx_con.fgcol = 0xFFCCCCCC;
+		}
+		gfx_puts("| ");
+		gfx_putc('\n');
+		gfx_putc('\n');
 	}
 	gfx_putc('\n');
 	gfx_con.fntsz = prevFontSize;

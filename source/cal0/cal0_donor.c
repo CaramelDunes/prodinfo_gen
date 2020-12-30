@@ -16,23 +16,19 @@
 
 #include "cal0_donor.h"
 
-#include "../config/config.h"
-#include "../gfx/di.h"
-#include "../gfx/gfx.h"
+#include "../config.h"
+#include <gfx/di.h>
+#include <gfx_utils.h>
 #include "../gfx/tui.h"
-#include "../mem/heap.h"
-#include "../mem/mc.h"
-#include "../mem/minerva.h"
-#include "../mem/sdram.h"
-#include "../soc/smmu.h"
-#include "../storage/nx_emmc.h"
-#include "../storage/nx_sd.h"
-#include "../storage/sdmmc.h"
-#include "../utils/btn.h"
-#include "../utils/list.h"
-#include "../utils/sprintf.h"
-#include "../utils/util.h"
-#include "../soc/fuse.h"
+#include "../storage/emummc.h"
+#include <storage/nx_sd.h>
+#include <storage/sdmmc.h>
+#include <utils/btn.h>
+#include <utils/list.h>
+#include <utils/sprintf.h>
+#include <utils/util.h>
+#include <mem/heap.h>
+#include <soc/fuse.h>
 
 #include <string.h>
 #include "gcm.h"

@@ -17,39 +17,29 @@
 #ifndef _PKG1_H_
 #define _PKG1_H_
 
-#include "../utils/types.h"
+#include <utils/types.h>
 
-#define FS_HEADER_KEK_SOURCE         0
-#define FS_HEADER_KEY_SOURCE         1
-#define FS_KEY_AREA_KEY_APPLI_SOURCE 2
-#define FS_KEY_AREA_KEY_OCEAN_SOURCE 3
-#define FS_KEY_AREA_KEY_SYSTE_SOURCE 4
-#define FS_SAVE_MAC_KEK_SOURCE       5
-#define FS_SAVE_MAC_KEY_SOURCE       6
-#define FS_SAVE_MAC_SD_KEK_SOURCE    7
-#define FS_SAVE_MAC_SD_KEY_SOURCE    8
-#define FS_SD_CUSTOM_KEY_SOURCE      9
-#define FS_SD_KEK_SOURCE             10
-#define FS_SD_NCA_KEY_SOURCE         11
-#define FS_SD_SAVE_KEY_SOURCE        12
+#define PKG1_MAX_SIZE  0x40000
+#define PKG1_OFFSET    0x100000
+#define KEYBLOB_OFFSET 0x180000
 
-typedef struct _key_info_t
+typedef struct _bl_hdr_t210b01_t
 {
-	u32 start_offset;
-	u32 hks_offset;
-	bool hks_offset_is_from_end;
-	u32 alignment;
-	u32 hash_max;
-	u8 hash_order[13];
-	u32 es_offset;
-	u32 ssl_offset;
-} key_info_t;
+	u8  aes_mac[0x10];
+	u8  rsa_sig[0x100];
+	u8  salt[0x20];
+	u8  sha256[0x20];
+	u32 version;
+	u32 size;
+	u32 load_addr;
+	u32 entrypoint;
+	u8  rsvd[0x10];
+} bl_hdr_t210b01_t;
 
 typedef struct _pkg1_id_t
 {
 	const char *id;
 	u32 kb;
-	key_info_t key_info;
 } pkg1_id_t;
 
 const pkg1_id_t *pkg1_identify(u8 *pkg1);

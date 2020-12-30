@@ -19,9 +19,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include "gcm.h"
-#include "../sec/se.h"
-#include "../sec/se_t210.h"
-#include "../soc/fuse.h"
+#include <sec/se.h>
+#include <sec/se_t210.h>
+#include <soc/fuse.h>
 
 #include "cal_blocks.h"
 
@@ -253,7 +253,7 @@ void write_body_checksum(u8 *prodinfo_buffer)
 {
     u32 body_size = *((u32 *)(prodinfo_buffer + 0x08));
 
-    se_calc_sha256(prodinfo_buffer + 0x20, prodinfo_buffer + 0x40, body_size);
+    se_calc_sha256_oneshot(prodinfo_buffer + 0x20, prodinfo_buffer + 0x40, body_size);
 }
 
 bool valid_cal0_signature(u8 *prodinfo_buffer, u32 prodinfo_size)
@@ -272,7 +272,7 @@ bool valid_body_checksum(u8 *prodinfo_buffer, u32 prodinfo_size)
 
     // Check prodinfo hash.
     u8 body_checksum[0x20] = {0};
-    se_calc_sha256(body_checksum, prodinfo_buffer + 0x40, body_size);
+    se_calc_sha256_oneshot(body_checksum, prodinfo_buffer + 0x40, body_size);
     int is_body_corrupt = memcmp(body_checksum, prodinfo_buffer + 0x20, 0x20);
 
     return !is_body_corrupt;
@@ -423,12 +423,12 @@ void write_all_crc(u8 *prodinfo_buffer, u32 prodinfo_size)
 void write_all_sha256(u8 *prodinfo_buffer)
 {
     // RandomNumber
-    se_calc_sha256(prodinfo_buffer + 0x2300, prodinfo_buffer + 0x1300, 0x1000);
+    se_calc_sha256_oneshot(prodinfo_buffer + 0x2300, prodinfo_buffer + 0x1300, 0x1000);
 
     // GameCardCertificate
-    se_calc_sha256(prodinfo_buffer + 0x2840, prodinfo_buffer + 0x2440, 0x400);
+    se_calc_sha256_oneshot(prodinfo_buffer + 0x2840, prodinfo_buffer + 0x2440, 0x400);
 
     // SslCertificate
     u32 ssl_certificate_size = *(u32 *)(prodinfo_buffer + OFFSET_OF_BLOCK(SslCertificateSize));
-    se_calc_sha256(prodinfo_buffer + 0x12E0, prodinfo_buffer + 0x0AE0, ssl_certificate_size);
+    se_calc_sha256_oneshot(prodinfo_buffer + 0x12E0, prodinfo_buffer + 0x0AE0, ssl_certificate_size);
 }
