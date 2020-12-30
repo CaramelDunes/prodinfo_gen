@@ -166,14 +166,6 @@ int emummc_storage_init_mmc(sdmmc_storage_t *storage, sdmmc_t *sdmmc)
 		}
 		emu_cfg.file_based_part_size = fno.fsize >> 9;
 	}
-	else if (!emu_cfg.enabled)
-	{
-		if (!sdmmc_storage_init_mmc(storage, sdmmc, SDMMC_BUS_WIDTH_8, SDHCI_TIMING_MMC_HS400))
-			return 2;
-
-		if (h_cfg.emummc_force_disable)
-			return 0;
-	}
 
 	return 0;
 
