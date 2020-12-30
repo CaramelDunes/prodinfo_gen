@@ -46,22 +46,22 @@
 #include "cal0/cal0_scratch.h"
 
 hekate_config h_cfg;
-boot_cfg_t __attribute__((section("._boot_cfg"))) b_cfg;
+boot_cfg_t __attribute__((section ("._boot_cfg"))) b_cfg;
 
 volatile nyx_storage_t *nyx_str = (nyx_storage_t *)NYX_STORAGE_ADDR;
 sdmmc_storage_t storage;
 emmc_part_t *system_part;
 
 // This is a safe and unused DRAM region for our payloads.
-#define RELOC_META_OFF 0x7C
-#define PATCHED_RELOC_SZ 0x94
+#define RELOC_META_OFF      0x7C
+#define PATCHED_RELOC_SZ    0x94
 #define PATCHED_RELOC_STACK 0x40007000
 #define PATCHED_RELOC_ENTRY 0x40010000
-#define EXT_PAYLOAD_ADDR 0xC0000000
-#define RCM_PAYLOAD_ADDR (EXT_PAYLOAD_ADDR + ALIGN(PATCHED_RELOC_SZ, 0x10))
-#define COREBOOT_END_ADDR 0xD0000000
-#define CBFS_DRAM_EN_ADDR 0x4003e000
-#define CBFS_DRAM_MAGIC 0x4452414D // "DRAM"
+#define EXT_PAYLOAD_ADDR    0xC0000000
+#define RCM_PAYLOAD_ADDR    (EXT_PAYLOAD_ADDR + ALIGN(PATCHED_RELOC_SZ, 0x10))
+#define COREBOOT_END_ADDR   0xD0000000
+#define CBFS_DRAM_EN_ADDR   0x4003e000
+#define  CBFS_DRAM_MAGIC    0x4452414D // "DRAM"
 
 static void *coreboot_addr;
 
@@ -73,8 +73,8 @@ void reloc_patcher(u32 payload_dst, u32 payload_src, u32 payload_size)
 
 	relocator->start = payload_dst - ALIGN(PATCHED_RELOC_SZ, 0x10);
 	relocator->stack = PATCHED_RELOC_STACK;
-	relocator->end = payload_dst + payload_size;
-	relocator->ep = payload_dst;
+	relocator->end   = payload_dst + payload_size;
+	relocator->ep    = payload_dst;
 
 	if (payload_size == 0x7000)
 	{
@@ -215,7 +215,7 @@ void launch_tools()
 		if (i > 0)
 		{
 			memset(&ments[i + i_off], 0, sizeof(ment_t));
-			menu_t menu = {ments, "Choose a file to launch", 0, 0};
+			menu_t menu = { ments, "Choose a file to launch", 0, 0 };
 
 			file_sec = (char *)tui_do_menu(&menu);
 
@@ -273,9 +273,10 @@ ment_t ment_top[] = {
 	MDEF_HANDLER("Reboot (Normal)", reboot_normal, COLOR_VIOLET),
 	MDEF_HANDLER("Reboot (RCM)", reboot_rcm, COLOR_RED),
 	MDEF_HANDLER("Power off", power_off, COLOR_ORANGE),
-	MDEF_END()};
+	MDEF_END()
+};
 
-menu_t menu_top = {ment_top, NULL, 0, 0};
+menu_t menu_top = { ment_top, NULL, 0, 0 };
 
 extern void pivot_stack(u32 stack_top);
 
