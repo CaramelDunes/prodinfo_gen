@@ -1,7 +1,7 @@
 #ifndef _CRC_16_H
 #define _CRC_16_H
 
-#include "../utils/types.h"
+#include <utils/types.h>
 
 u16 get_crc_16(u8 *p, int n);
 

@@ -16,17 +16,19 @@
 
 #include "cal0_scratch.h"
 
-#include "../config/config.h"
-#include "../gfx/di.h"
-#include "../gfx/gfx.h"
+#include "../config.h"
+#include <gfx/di.h>
+#include <gfx_utils.h>
 #include "../gfx/tui.h"
-#include "../storage/sdmmc.h"
-#include "../storage/nx_sd.h"
-#include "../utils/btn.h"
-#include "../utils/sprintf.h"
-#include "../utils/util.h"
-#include "../mem/heap.h"
-#include "../soc/fuse.h"
+#include "../storage/emummc.h"
+#include <storage/nx_sd.h>
+#include <storage/sdmmc.h>
+#include <utils/btn.h>
+#include <utils/list.h>
+#include <utils/sprintf.h>
+#include <utils/util.h>
+#include <mem/heap.h>
+#include <soc/fuse.h>
 
 #include <string.h>
 #include "gcm.h"

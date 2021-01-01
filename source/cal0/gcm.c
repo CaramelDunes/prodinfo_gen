@@ -20,8 +20,8 @@
 
 // #include "arm.h"
 // #include "utils.h"
-#include "../soc/fuse.h"
-#include "../sec/se.h"
+#include <soc/fuse.h>
+#include <sec/se.h>
 #include "gcm.h"
 
 // #include "sealedkeys.h"
