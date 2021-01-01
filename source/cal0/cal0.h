@@ -1,7 +1,7 @@
 #ifndef _CAL0_H_
 #define _CAL0_H_
 
-#include "../utils/types.h"
+#include <utils/types.h>
 
 void device_id_string(char device_id_string[0x11]);
 
