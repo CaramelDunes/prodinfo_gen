@@ -7,7 +7,6 @@ void device_id_string(char device_id_string[0x11]);
 
 void write_ssl_certificate(u8 *prodinfo_buffer);
 void write_random_number(u8 *prodinfo_buffer, u64 device_id);
-void write_gamecard_certificate(u8 *prodinfo_buffer);
 void write_eticket_certificate(u8 *prodinfo_buffer, const char *device_id_string);
 void write_device_certificate(u8 *prodinfo_buffer, const char *device_id_string);
 
@@ -36,10 +35,12 @@ bool valid_ecc_b233_device_certificate(u8 *prodinfo_buffer);
 bool valid_rsa_2048_eticket_certificate(u8 *prodinfo_buffer);
 bool valid_cal0_signature(u8 *prodinfo_buffer, u32 prodinfo_size);
 bool valid_body_checksum(u8 *prodinfo_buffer, u32 prodinfo_size);
+bool valid_extended_gamecard_key(u8 *prodinfo_buffer, u8 *master_key_0);
 
 // Write
 void write_extended_ecc_b233_device_key(u8 *prodinfo_buffer, u64 device_id, u8 *master_key_0);
 void write_extended_rsa_2048_eticket_key(u8 *prodinfo_buffer, u64 device_id, u8 *master_key_0);
 void write_body_checksum(u8 *prodinfo_buffer);
+void write_extended_gamecard_key(u8 *prodinfo_buffer, u64 device_id, u8 *master_key_0);
 
 #endif

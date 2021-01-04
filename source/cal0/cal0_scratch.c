@@ -134,6 +134,7 @@ void build_cal0_scratch()
     gfx_printf("%kWriting extended keys\n", colors[(color_idx++) % 6]);
     write_extended_ecc_b233_device_key(prodinfo_buffer, device_id_int, master_key_0);
     write_extended_rsa_2048_eticket_key(prodinfo_buffer, device_id_int, master_key_0);
+    write_extended_gamecard_key(prodinfo_buffer, device_id_int, master_key_0);
 
     write_short_values(prodinfo_buffer);
 

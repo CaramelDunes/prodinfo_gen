@@ -23,9 +23,10 @@ What *won't* work with a **"from scratch"** PRODINFO:
 What *should* work with a **"from donor"** PRODINFO:
  - Booting
  - Launching homebrews
+ - GameCards
  - Amiibos (not tested)
- - GameCards (not tested)
- - Communicating with Nintendo's servers (HIGH PROBABILITY OF GETTING BANNED, not tested)
+
+**Note:** Using a recent Switch (i.e. Mariko) PRODINFO as a donor is not yet supported.
 
 **USE THIS TOOL AT YOUR OWN RISK, DO NOT OVERWRITE A FACTORY PRODINFO WITHOUT MAKING A BACKUP FIRST.**
 
