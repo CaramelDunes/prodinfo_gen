@@ -259,7 +259,7 @@ static void _derive_master_keys_post_620(u32 pkg1_kb, key_derivation_ctx_t *keys
             memset(keys->master_key[kb], 0, AES_128_KEY_SIZE);
         }
         if (_key_exists(keys->temp_key)) {
-            EPRINTFARGS("Unable to derive master key. kb = %d.\n Check sept files on SD and retry.", pkg1_kb);
+            EPRINTFARGS("Unable to derive master key. kb = %d.", pkg1_kb);
             memset(keys->master_key, 0, sizeof(keys->master_key));
         }
     }
@@ -576,7 +576,6 @@ static bool _derive_titlekeys(key_derivation_ctx_t *keys, titlekey_buffer_t *tit
 
     gfx_printf("%kTitlekeys...     \n", colors[(color_idx++) % 6]);
 
-    u32 buf_size = 0x4000;
     rsa_keypair_t rsa_keypair = {0};
 
     if (!emummc_storage_read(&emmc_storage, NX_EMMC_CALIBRATION_OFFSET / NX_EMMC_BLOCKSIZE, NX_EMMC_CALIBRATION_SIZE / NX_EMMC_BLOCKSIZE, titlekey_buffer->read_buffer)) {
@@ -624,6 +623,7 @@ static bool _derive_titlekeys(key_derivation_ctx_t *keys, titlekey_buffer_t *tit
 
     se_rsa_key_set(0, rsa_keypair.modulus, sizeof(rsa_keypair.modulus), rsa_keypair.private_exponent, sizeof(rsa_keypair.private_exponent));
 
+    const u32 buf_size = 0x4000;
     _get_titlekeys_from_save(buf_size, keys->save_mac_key, titlekey_buffer, NULL);
     _get_titlekeys_from_save(buf_size, keys->save_mac_key, titlekey_buffer, &rsa_keypair);
 
@@ -708,6 +708,7 @@ static void _save_mariko_partial_keys(char *text_buffer) {
     }
     free(data);
     sd_save_to_file(text_buffer, strlen(text_buffer), "sd:/switch/partialaes.keys");
+    gfx_printf("%kWrote partials to sd:/switch/partialaes.keys\n", colors[(color_idx++) % 6]);
 }
 
 static void _save_keys_to_sd(key_derivation_ctx_t *keys, titlekey_buffer_t *titlekey_buffer, const pkg1_id_t *pkg1_id, u32 start_whole_operation_time, u32 derivable_key_count) {
@@ -796,6 +797,11 @@ static void _save_keys_to_sd(key_derivation_ctx_t *keys, titlekey_buffer_t *titl
     } else
         EPRINTF("Unable to save keys to SD.");
 
+    if (h_cfg.t210b01) {
+        memset(text_buffer, 0, text_buffer_size);
+        _save_mariko_partial_keys(text_buffer);
+    }
+
     if (_titlekey_count == 0) {
         free(text_buffer);
         return;
@@ -817,11 +823,6 @@ static void _save_keys_to_sd(key_derivation_ctx_t *keys, titlekey_buffer_t *titl
         gfx_printf("%kWrote %d bytes to %s\n", colors[(color_idx++) % 6], (u32)fno.fsize, keyfile_path);
     } else
         EPRINTF("Unable to save titlekeys to SD.");
-
-    if (h_cfg.t210b01) {
-        memset(text_buffer, 0, text_buffer_size);
-        _save_mariko_partial_keys(text_buffer);
-    }
 
     free(text_buffer);
 }
