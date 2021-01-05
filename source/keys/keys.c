@@ -127,8 +127,7 @@ static u8 *_read_pkg1(sdmmc_t *sdmmc, const pkg1_id_t **pkg1_id) {
 static bool _handle_sept(void *tsec_fw, u32 tsec_size, u32 kb, void *out_key) {
     sd_mount();
     if (!f_stat("sd:/sept/payload.bak", NULL)) {
-        if (f_unlink("sd:/sept/payload.bin"))
-            gfx_printf("%kNote: no payload.bin already in /sept\n", colors[(color_idx++) % 6]);
+        f_unlink("sd:/sept/payload.bin");
         f_rename("sd:/sept/payload.bak", "sd:/sept/payload.bin");
     }
 
@@ -152,7 +151,7 @@ static bool _handle_sept(void *tsec_fw, u32 tsec_size, u32 kb, void *out_key) {
         volatile reloc_meta_t *relocator = (reloc_meta_t *)(IPL_LOAD_ADDR + RELOC_META_OFF);
         u32 payload_size = relocator->end - IPL_LOAD_ADDR;
         if (f_open(&fp, "sd:/sept/payload.bin", FA_CREATE_NEW | FA_WRITE)) {
-            EPRINTF("Unable to open /sept/payload.bin to write.");
+            EPRINTF("Unable to write self to /sept/payload.bin.");
             return false;
         }
         gfx_printf("%kWrite self to /sept/payload.bin...", colors[(color_idx++) % 6]);
