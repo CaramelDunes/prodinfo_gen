@@ -26,21 +26,21 @@ void write_all_sha256(u8 *prodinfo_buffer);
 
 //Check
 bool valid_donor_prodinfo(u8 *prodinfo_buffer, u32 prodinfo_size);
-bool valid_own_prodinfo(u8 *prodinfo_buffer, u32 prodinfo_size, u8 *master_key_0);
+bool valid_own_prodinfo(u8 *prodinfo_buffer, u32 prodinfo_size, u8 *master_key);
 
 bool valid_crcs(u8 *prodinfo_buffer, u32 prodinfo_size);
-bool valid_extended_rsa_2048_eticket_key(u8 *prodinfo_buffer, u8 *master_key_0);
-bool valid_extended_ecc_b233_device_key(u8 *prodinfo_buffer, u8 *master_key_0);
+bool valid_extended_rsa_2048_eticket_key(u8 *prodinfo_buffer, u8 *master_key);
+bool valid_extended_ecc_b233_device_key(u8 *prodinfo_buffer, u8 *master_key);
 bool valid_ecc_b233_device_certificate(u8 *prodinfo_buffer);
 bool valid_rsa_2048_eticket_certificate(u8 *prodinfo_buffer);
 bool valid_cal0_signature(u8 *prodinfo_buffer, u32 prodinfo_size);
 bool valid_body_checksum(u8 *prodinfo_buffer, u32 prodinfo_size);
-bool valid_extended_gamecard_key(u8 *prodinfo_buffer, u8 *master_key_0);
+bool valid_extended_gamecard_key(u8 *prodinfo_buffer, u8 *master_key);
 
 // Write
-void write_extended_ecc_b233_device_key(u8 *prodinfo_buffer, u64 device_id, u8 *master_key_0);
-void write_extended_rsa_2048_eticket_key(u8 *prodinfo_buffer, u64 device_id, u8 *master_key_0);
+void write_extended_ecc_b233_device_key(u8 *prodinfo_buffer, u64 device_id, u8 *master_key);
+void write_extended_rsa_2048_eticket_key(u8 *prodinfo_buffer, u64 device_id, u8 *master_key);
 void write_body_checksum(u8 *prodinfo_buffer);
-void write_extended_gamecard_key(u8 *prodinfo_buffer, u64 device_id, u8 *master_key_0);
+void write_extended_gamecard_key(u8 *prodinfo_buffer, u64 device_id, u8 *master_key);
 
 #endif

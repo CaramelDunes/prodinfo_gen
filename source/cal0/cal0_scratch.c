@@ -34,7 +34,6 @@
 #include "gcm.h"
 #include "crc16.h"
 #include "cal0.h"
-#include "keyfile_read.h"
 
 extern hekate_config h_cfg;
 
@@ -72,11 +71,11 @@ void build_cal0_scratch()
     tui_sbar(true);
 
     u8 master_key_0[0x10] = {0};
-    if (!read_master_key_0(master_key_0) || get_crc_16(master_key_0, 0x10) != 0x801B)
-    {
-        gfx_printf("Couldn't get master_key_00 from sd:/switch/prod.keys\n", colors[(color_idx++) % 6]);
-        goto out_wait;
-    }
+    // if (!read_master_key_0(master_key_0) || get_crc_16(master_key_0, 0x10) != 0x801B)
+    // {
+    //     gfx_printf("Couldn't get master_key_00 from sd:/switch/prod.keys\n", colors[(color_idx++) % 6]);
+    //     goto out_wait;
+    // }
 
     color_idx = 0;
 

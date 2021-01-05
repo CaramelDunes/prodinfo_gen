@@ -18,7 +18,6 @@
 
 #include "../config.h"
 #include <gfx/di.h>
-#include <gfx_utils.h>
 #include "../gfx/tui.h"
 #include "../storage/emummc.h"
 #include <storage/nx_sd.h>
@@ -34,7 +33,7 @@
 #include "gcm.h"
 #include "crc16.h"
 #include "cal0.h"
-#include "keyfile_read.h"
+#include "../keys/extkeys.h"
 
 extern hekate_config h_cfg;
 
@@ -65,7 +64,19 @@ static inline u32 _read_le_u32(const void *buffer, u32 offset)
            (*(u8 *)(buffer + offset + 3) << 0x18);
 }
 
-void unseal_key(u8 *kek_source, u8 *kekek_source, u8 *master_key_0, u8 *dest, u8 usecase);
+bool read_keys(keyset_t* ks) {
+    FILINFO fno;
+    f_mkdir("sd:/switch");
+    char prod_keys_path[] = "sd:/switch/prod.keys";
+    if (f_stat(prod_keys_path, &fno) || fno.fsize < 0x40 || fno.fsize > 0x003FBC00)
+        return false;
+
+    // Read donor prodinfo.
+    u32 keyfile_size = 0;
+    char *keyfile_buffer = sd_file_read(prod_keys_path, &keyfile_size);
+
+	extkeys_initialize_settings(ks, keyfile_buffer);
+}
 
 void build_cal0_donor()
 {
@@ -80,12 +91,14 @@ void build_cal0_donor()
 
     tui_sbar(true);
 
-    u8 master_key_0[0x10] = {0};
-    if (!read_master_key_0(master_key_0) || get_crc_16(master_key_0, 0x10) != 0x801B)
-    {
-        gfx_printf("Couldn't get master_key_00 from sd:/switch/prod.keys\n", colors[(color_idx++) % 6]);
-        goto out_wait;
-    }
+    // if (!read_keyset.master_keys[0](keyset.master_keys[0]) || get_crc_16(keyset.master_keys[0], 0x10) != 0x801B)
+    // {
+    //     gfx_printf("Couldn't get keyset.master_keys[0]0 from sd:/switch/prod.keys\n", colors[(color_idx++) % 6]);
+    //     goto out_wait;
+    // }
+
+    keyset_t keyset = {0};
+    read_keys(&keyset);
 
     color_idx = 0;
 
@@ -135,9 +148,9 @@ void build_cal0_donor()
     write_eticket_certificate(prodinfo_buffer, device_id_as_string);
 
     gfx_printf("%kWriting extended keys\n", colors[(color_idx++) % 6]);
-    write_extended_ecc_b233_device_key(prodinfo_buffer, device_id_int, master_key_0);
-    write_extended_rsa_2048_eticket_key(prodinfo_buffer, device_id_int, master_key_0);
-    write_extended_gamecard_key(prodinfo_buffer, device_id_int, master_key_0);
+    write_extended_ecc_b233_device_key(prodinfo_buffer, device_id_int, keyset.master_keys[0]);
+    write_extended_rsa_2048_eticket_key(prodinfo_buffer, device_id_int, keyset.master_keys[0]);
+    write_extended_gamecard_key(prodinfo_buffer, device_id_int, keyset.master_keys[0]);
 
     gfx_printf("%kWriting checksums\n", colors[(color_idx++) % 6]);
     write_all_crc(prodinfo_buffer, prodinfo_size);
@@ -145,7 +158,7 @@ void build_cal0_donor()
 
     write_body_checksum(prodinfo_buffer);
 
-    if (!valid_own_prodinfo(prodinfo_buffer, prodinfo_size, master_key_0))
+    if (!valid_own_prodinfo(prodinfo_buffer, prodinfo_size, keyset.master_keys[0]))
         gfx_printf("%kSomething went wrong, writing output anyway...\n", colors[(color_idx++) % 6]);
 
     if (!sd_mount())
@@ -153,9 +166,8 @@ void build_cal0_donor()
         EPRINTF("Unable to mount SD.");
         goto free_buffers;
     }
-    end_time = get_tmr_us();
-    gfx_printf("%kDone in %d us\n\n", colors[(color_idx++) % 6], end_time - begin_time);
 
+    gfx_printf("\n%kWriting output file...\n", colors[(color_idx++) % 6]);
     f_mkdir("sd:/switch");
     char prodinfo_path[] = "sd:/switch/generated_prodinfo_from_donor.bin";
     if (!sd_save_to_file(prodinfo_buffer, prodinfo_size, prodinfo_path) && !f_stat(prodinfo_path, &fno))
@@ -164,6 +176,9 @@ void build_cal0_donor()
     }
     else
         EPRINTF("Unable to save generated PRODINFO to SD.");
+
+    end_time = get_tmr_us();
+    gfx_printf("\n%kDone in %d us\n\n", colors[(color_idx++) % 6], end_time - begin_time);
 
 free_buffers:
     free(prodinfo_buffer);

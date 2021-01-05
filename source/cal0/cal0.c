@@ -27,21 +27,16 @@
 
 #include "crc16.h"
 
-static const u8 es_kek_source[0x10] = {0x7f, 0x5b, 0xb0, 0x84, 0x7b, 0x25, 0xaa, 0x67, 0xfa, 0xc8, 0x4b, 0xe2, 0x3d, 0x7b, 0x69, 0x03};
-static const u8 prod_kekek_source[0x10] = {0xaf, 0x44, 0xf3, 0x3e, 0x82, 0x4e, 0x83, 0x92, 0xed, 0x38, 0xe1, 0x2f, 0x29, 0xcf, 0x6f, 0x4d};
-static const u8 eticket_rsa_kekek_source[0x10] = {0x46, 0x6e, 0x57, 0xb7, 0x4a, 0x44, 0x7f, 0x02, 0xf3, 0x21, 0xcd, 0xe5, 0x8f, 0x2f, 0x55, 0x35};
-static const u8 eticket_rsa_kek_source[0x10] = {0xdb, 0xa4, 0x51, 0x12, 0x4c, 0xa0, 0xa9, 0x83, 0x68, 0x14, 0xf5, 0xed, 0x95, 0xe3, 0x12, 0x5b};
+#include "../hos/hos.h"
+#include "../keys/key_sources.inl"
 
-static const u8 lotus_kekek_source[0x10] = {
-    0xD0, 0xCC, 0xDE, 0x8D, 0x10, 0x98, 0x67, 0x2F, 0x64, 0x9A, 0x1E, 0xC4, 0xFE, 0x85, 0x62, 0xF0};
-static const u8 lotus_kek_source[0x10] = {
-    0xC3, 0xB5, 0x86, 0x0A, 0xE9, 0xF7, 0x80, 0xF5, 0xAF, 0xA8, 0x49, 0x2D, 0xD4, 0x33, 0xB5, 0xA9};
+static const u8 es_kek_source_x[0x10] = {0x7f, 0x5b, 0xb0, 0x84, 0x7b, 0x25, 0xaa, 0x67, 0xfa, 0xc8, 0x4b, 0xe2, 0x3d, 0x7b, 0x69, 0x03};
+static const u8 es_kek_source_y[0x10] = {0xaf, 0x44, 0xf3, 0x3e, 0x82, 0x4e, 0x83, 0x92, 0xed, 0x38, 0xe1, 0x2f, 0x29, 0xcf, 0x6f, 0x4d};
 
-static const u8 aes_kek_seed_01[0x10] = {0xA2, 0xAB, 0xBF, 0x9C, 0x92, 0x2F, 0xBB, 0xE3, 0x78, 0x79, 0x9B, 0xC0, 0xCC, 0xEA, 0xA5, 0x74};
+static const u8 lotus_kek_source_x[0x10] = {0xD0, 0xCC, 0xDE, 0x8D, 0x10, 0x98, 0x67, 0x2F, 0x64, 0x9A, 0x1E, 0xC4, 0xFE, 0x85, 0x62, 0xF0};
+static const u8 lotus_kek_source_y[0x10] = {0xC3, 0xB5, 0x86, 0x0A, 0xE9, 0xF7, 0x80, 0xF5, 0xAF, 0xA8, 0x49, 0x2D, 0xD4, 0x33, 0xB5, 0xA9};
+
 static const u8 aes_kek_seed_02[0x10] = {0x57, 0xE2, 0xD9, 0x45, 0xE4, 0x92, 0xF4, 0xFD, 0xC3, 0xF9, 0x86, 0x38, 0x89, 0x78, 0x9F, 0x3C};
-static const u8 aes_kek_seed_03[0x10] = {0xE5, 0x4D, 0x9A, 0x02, 0xF0, 0x4F, 0x5F, 0xA8, 0xAD, 0x76, 0x0A, 0xF6, 0x32, 0x95, 0x59, 0xBB};
-static const u8 aes_kek_generation_source[0x10] = {
-    0x4D, 0x87, 0x09, 0x86, 0xC4, 0x5D, 0x20, 0x72, 0x2F, 0xBA, 0x10, 0x53, 0xDA, 0x92, 0xE8, 0xA9};
 
 static const u32 prodinfo_min_size = 0x3D70;
 static const u32 prodinfo_max_size = 0x003FBC00;
@@ -85,12 +80,12 @@ bool valid_donor_prodinfo(u8 *prodinfo_buffer, u32 prodinfo_size)
            valid_body_checksum(prodinfo_buffer, prodinfo_size);
 }
 
-bool valid_own_prodinfo(u8 *prodinfo_buffer, u32 prodinfo_size, u8 *master_key_0)
+bool valid_own_prodinfo(u8 *prodinfo_buffer, u32 prodinfo_size, u8 *master_key)
 {
     return valid_donor_prodinfo(prodinfo_buffer, prodinfo_size) &&
-           valid_extended_rsa_2048_eticket_key(prodinfo_buffer, master_key_0) &&
-           valid_extended_ecc_b233_device_key(prodinfo_buffer, master_key_0) &&
-           valid_extended_gamecard_key(prodinfo_buffer, master_key_0);
+           valid_extended_rsa_2048_eticket_key(prodinfo_buffer, master_key) &&
+           valid_extended_ecc_b233_device_key(prodinfo_buffer, master_key) &&
+           valid_extended_gamecard_key(prodinfo_buffer, master_key);
 }
 
 bool valid_crcs(u8 *prodinfo_buffer, u32 prodinfo_size)
@@ -116,7 +111,7 @@ static void _generate_kek(u32 ks, const void *key_source, void *master_key, cons
     se_aes_unwrap_key(ks, ks, key_source);
 }
 
-void unseal_key(const u8 *kek_source, const u8 *kekek_source, u8 *master_key_0, u8 *dest, u8 usecase)
+void unseal_key(const u8 *kek_source_x, const u8 *kek_source_y, u8 *master_key, u8 *dest, u8 usecase)
 {
     u8 temp_key[0x10] = {0};
     const u8 *seed = NULL;
@@ -142,8 +137,8 @@ void unseal_key(const u8 *kek_source, const u8 *kekek_source, u8 *master_key_0, 
     for (u32 i = 0; i < 0x10; i++)
         temp_key[i] = aes_kek_generation_source[i] ^ seed[i];
 
-    _generate_kek(KEYSLOT_SWITCH_TEMPKEY, kek_source, master_key_0, temp_key);
-    se_aes_crypt_block_ecb(KEYSLOT_SWITCH_TEMPKEY, 0, dest, kekek_source);
+    _generate_kek(KEYSLOT_SWITCH_TEMPKEY, kek_source_x, master_key, temp_key);
+    se_aes_crypt_block_ecb(KEYSLOT_SWITCH_TEMPKEY, 0, dest, kek_source_y);
 }
 
 void ghash_calc(const u8 *plaintext, u32 plaintext_size, const u8 ctr[0x10], u8 *dest)
@@ -184,8 +179,8 @@ static void _fix_gcm_content(const u8 *ctr, u8 *ciphertext, u32 ciphertext_size,
 
     se_aes_crypt_ctr(KEYSLOT_SWITCH_TEMPKEY, plaintext, plaintext_size, ciphertext, plaintext_size, ctr);
 
-    // u64 file_device_id = *(u64 *)(plaintext + plaintext_size - 0x8) & 0x00FFFFFFFFFFFFFFULL;
-    // gfx_hexdump(0, (const u8 *)&file_device_id, 0x08);
+    u64 file_device_id = *(u64 *)(plaintext + plaintext_size - 0x8) & 0x00FFFFFFFFFFFFFFULL;
+    gfx_hexdump(0, (const u8 *)&file_device_id, 0x08);
 
     // Replace device id
     write64be(plaintext, plaintext_size - 0x8, device_id);
@@ -197,10 +192,10 @@ static void _fix_gcm_content(const u8 *ctr, u8 *ciphertext, u32 ciphertext_size,
     se_aes_crypt_ctr(KEYSLOT_SWITCH_TEMPKEY, ciphertext, plaintext_size, plaintext, plaintext_size, ctr);
 }
 
-bool valid_extended_rsa_2048_eticket_key(u8 *prodinfo_buffer, u8 *master_key_0)
+bool valid_extended_rsa_2048_eticket_key(u8 *prodinfo_buffer, u8 *master_key)
 {
     u8 the_key[0x10] = {0};
-    unseal_key(eticket_rsa_kekek_source, eticket_rsa_kek_source, master_key_0, the_key, 3);
+    unseal_key(eticket_rsa_kekek_source, eticket_rsa_kek_source, master_key, the_key, 3);
     se_aes_key_set(KEYSLOT_SWITCH_TEMPKEY, the_key, 0x10);
 
     u8 *ctr = prodinfo_buffer + 0x3890;
@@ -211,10 +206,10 @@ bool valid_extended_rsa_2048_eticket_key(u8 *prodinfo_buffer, u8 *master_key_0)
     return valid;
 }
 
-void write_extended_rsa_2048_eticket_key(u8 *prodinfo_buffer, u64 device_id, u8 *master_key_0)
+void write_extended_rsa_2048_eticket_key(u8 *prodinfo_buffer, u64 device_id, u8 *master_key)
 {
     u8 the_key[0x10] = {0};
-    unseal_key(eticket_rsa_kekek_source, eticket_rsa_kek_source, master_key_0, the_key, 3);
+    unseal_key(eticket_rsa_kekek_source, eticket_rsa_kek_source, master_key, the_key, 3);
     se_aes_key_set(KEYSLOT_SWITCH_TEMPKEY, the_key, 0x10);
 
     u8 *ctr = prodinfo_buffer + 0x3890;
@@ -223,10 +218,10 @@ void write_extended_rsa_2048_eticket_key(u8 *prodinfo_buffer, u64 device_id, u8 
     _fix_gcm_content(ctr, ciphertext, 0x220, device_id, KEYSLOT_SWITCH_TEMPKEY);
 }
 
-bool valid_extended_ecc_b233_device_key(u8 *prodinfo_buffer, u8 *master_key_0)
+bool valid_extended_ecc_b233_device_key(u8 *prodinfo_buffer, u8 *master_key)
 {
     u8 the_key[0x10] = {0};
-    unseal_key(es_kek_source, prod_kekek_source, master_key_0, the_key, 1);
+    unseal_key(es_kek_source_x, es_kek_source_y, master_key, the_key, 1);
     se_aes_key_set(KEYSLOT_SWITCH_TEMPKEY, the_key, 0x10);
 
     u8 *ctr = prodinfo_buffer + 0x3770;
@@ -237,10 +232,10 @@ bool valid_extended_ecc_b233_device_key(u8 *prodinfo_buffer, u8 *master_key_0)
     return valid;
 }
 
-void write_extended_ecc_b233_device_key(u8 *prodinfo_buffer, u64 device_id, u8 *master_key_0)
+void write_extended_ecc_b233_device_key(u8 *prodinfo_buffer, u64 device_id, u8 *master_key)
 {
     u8 the_key[0x10] = {0};
-    unseal_key(es_kek_source, prod_kekek_source, master_key_0, the_key, 1);
+    unseal_key(es_kek_source_x, es_kek_source_y, master_key, the_key, 1);
     se_aes_key_set(KEYSLOT_SWITCH_TEMPKEY, the_key, 0x10);
 
     u8 *ctr = prodinfo_buffer + 0x3770;
@@ -249,10 +244,10 @@ void write_extended_ecc_b233_device_key(u8 *prodinfo_buffer, u64 device_id, u8 *
     _fix_gcm_content(ctr, ciphertext, 0x30, device_id, KEYSLOT_SWITCH_TEMPKEY);
 }
 
-bool valid_extended_gamecard_key(u8 *prodinfo_buffer, u8 *master_key_0)
+bool valid_extended_gamecard_key(u8 *prodinfo_buffer, u8 *master_key)
 {
     u8 the_key[0x10] = {0};
-    unseal_key(lotus_kekek_source, lotus_kek_source, master_key_0, the_key, 2);
+    unseal_key(lotus_kek_source_x, lotus_kek_source_y, master_key, the_key, 2);
     se_aes_key_set(KEYSLOT_SWITCH_TEMPKEY, the_key, 0x10);
 
     u8 *ctr = prodinfo_buffer + 0x3C20;
@@ -263,10 +258,10 @@ bool valid_extended_gamecard_key(u8 *prodinfo_buffer, u8 *master_key_0)
     return valid;
 }
 
-void write_extended_gamecard_key(u8 *prodinfo_buffer, u64 device_id, u8 *master_key_0)
+void write_extended_gamecard_key(u8 *prodinfo_buffer, u64 device_id, u8 *master_key)
 {
     u8 the_key[0x10] = {0};
-    unseal_key(lotus_kekek_source, lotus_kek_source, master_key_0, the_key, 2);
+    unseal_key(lotus_kek_source_x, lotus_kek_source_y, master_key, the_key, 2);
     se_aes_key_set(KEYSLOT_SWITCH_TEMPKEY, the_key, 0x10);
 
     u8 *ctr = prodinfo_buffer + 0x3C20;
