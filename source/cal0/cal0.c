@@ -22,6 +22,7 @@
 #include <sec/se.h>
 #include <sec/se_t210.h>
 #include <soc/fuse.h>
+#include <utils/util.h>
 
 #include "cal_blocks.h"
 
@@ -40,6 +41,8 @@ static const u8 aes_kek_seed_02[0x10] = {0x57, 0xE2, 0xD9, 0x45, 0xE4, 0x92, 0xF
 
 static const u32 prodinfo_min_size = 0x3D70;
 static const u32 prodinfo_max_size = 0x003FBC00;
+
+extern volatile nyx_storage_t *nyx_str;
 
 static inline uint64_t read64le(const volatile void *qword, size_t offset)
 {
@@ -410,6 +413,7 @@ void write_battery_lot(u8 *prodinfo_buffer)
 
 void write_speaker_calibration_value(u8 *prodinfo_buffer)
 {
+    // Seems constant for all Switch models.
     unsigned char speaker_calibration_value[80] = {
         0x00, 0x03, 0x00, 0x5A, 0xED, 0x87, 0x00, 0x00, 0xC1, 0x61, 0x1E, 0xAF,
         0x09, 0x5B, 0xC9, 0x60, 0x18, 0x8D, 0x00, 0x00, 0xDE, 0x2A, 0x0F, 0xDB,
@@ -425,17 +429,14 @@ void write_speaker_calibration_value(u8 *prodinfo_buffer)
 void write_short_values(u8 *prodinfo_buffer)
 {
     prodinfo_buffer[OFFSET_OF_BLOCK(RegionCode)] = 1;
-    prodinfo_buffer[OFFSET_OF_BLOCK(ProductModel)] = 1;
+    prodinfo_buffer[OFFSET_OF_BLOCK(ProductModel)] = fuse_read_hw_type() + 1;
 
     unsigned char brightness_mapping[12] = {
         0x00, 0x00, 0x80, 0x3F, 0x00, 0x00, 0x00, 0x00, 0x0A, 0xD7, 0xA3, 0x3C};
-
     memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(LcdBacklightBrightnessMapping), brightness_mapping, sizeof(brightness_mapping));
 
-    unsigned char lcd_vendor_id[3] = {
-        0x0F, 0x94, 0x30};
-
-    memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(LcdVendorId), lcd_vendor_id, sizeof(lcd_vendor_id));
+    u32 display_id = nyx_str->info.disp_id;
+    memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(LcdVendorId), &display_id, 3);
 }
 
 void write_all_crc(u8 *prodinfo_buffer, u32 prodinfo_size)
