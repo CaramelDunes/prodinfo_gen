@@ -21,6 +21,15 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 #include <string.h>
 #include "extkeys.h"
 #include <inttypes.h>
+#include <sec/se.h>
+#include <sec/se_t210.h>
+#include <storage/nx_sd.h>
+
+#include "../cal0/gcm.h"
+
+#include "key_sources.inl"
+
+int key_exists(const void *data) { return memcmp(data, "\x00\x00\x00\x00\x00\x00\x00\x00", 8) != 0; };
 
 /**
  * Reads a line from file f and parses out the key and value from it.
@@ -214,6 +223,8 @@ bool parse_hex_key(unsigned char *key, const char *hex, unsigned int len)
 
 void extkeys_initialize_settings(keyset_t *keyset, char *filebuffer)
 {
+    memset(keyset, 0, sizeof(keyset_t));
+
     char *key, *value;
     int ret;
 
@@ -235,9 +246,9 @@ void extkeys_initialize_settings(keyset_t *keyset, char *filebuffer)
             }
 
             int matched_key = 0;
-            if (strcmp(key, "device_key_4x") == 0)
+            if (strcmp(key, "donor_device_key_4x") == 0)
             {
-                parse_hex_key(keyset->device_key_4x, value, sizeof(keyset->device_key_4x));
+                parse_hex_key(keyset->donor_device_key_4x, value, sizeof(keyset->donor_device_key_4x));
                 matched_key = 1;
             }
             else
@@ -260,4 +271,70 @@ void extkeys_initialize_settings(keyset_t *keyset, char *filebuffer)
 
         line = strtok(NULL, "\n");
     }
+
+    u8 temp[0x10] = {0};
+
+    if (key_exists(keyset->master_keys[0]))
+    {
+        se_aes_key_set(KEYSLOT_SWITCH_TEMPKEY, keyset->master_keys[0], 0x10);
+        se_aes_crypt_block_ecb(KEYSLOT_SWITCH_TEMPKEY, 0, temp, master_key_vectors[0]);
+
+        // Check if master_key_00 is valid.
+        if (memcmp(temp, "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0", 0x10) == 0)
+        {
+            keyset->master_key_count = 1;
+            for (int i = 1; i < NB_MASTER_KEYS; i++)
+            {
+                if (key_exists(keyset->master_keys[i]))
+                {
+                    se_aes_key_set(KEYSLOT_SWITCH_TEMPKEY, keyset->master_keys[i], 0x10);
+                    se_aes_crypt_block_ecb(KEYSLOT_SWITCH_TEMPKEY, 0, temp, master_key_vectors[i]);
+
+                    if (memcmp(temp, keyset->master_keys[i - 1], 0x10) == 0)
+                    {
+                        keyset->master_key_count++;
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+                else
+                {
+                    break;
+                }
+            }
+
+            if (key_exists(keyset->donor_device_key_4x))
+            {
+                for (int i = 0; i < 0x8; i++)
+                {
+                    se_aes_key_set(KEYSLOT_SWITCH_TEMPKEY, keyset->donor_device_key_4x, 0x10);
+                    se_aes_crypt_block_ecb(KEYSLOT_SWITCH_TEMPKEY, 0, temp, device_master_key_source_sources[i]);
+
+                    se_aes_key_set(KEYSLOT_SWITCH_MASTERKEY, keyset->master_keys[0], 0x10);
+                    se_aes_unwrap_key(KEYSLOT_SWITCH_MASTERKEY, KEYSLOT_SWITCH_MASTERKEY, device_master_kek_sources[i]);
+
+                    se_aes_crypt_block_ecb(KEYSLOT_SWITCH_MASTERKEY, 0, keyset->donor_device_master_keys[i], temp);
+                }
+            }
+        }
+    }
+}
+
+bool read_keys(keyset_t *ks)
+{
+    FILINFO fno;
+    f_mkdir("sd:/switch");
+    char prod_keys_path[] = "sd:/switch/prod.keys";
+    if (f_stat(prod_keys_path, &fno) || fno.fsize < 0x40 || fno.fsize > 0x003FBC00)
+        return false;
+
+    // Read donor prodinfo.
+    u32 keyfile_size = 0;
+    char *keyfile_buffer = sd_file_read(prod_keys_path, &keyfile_size);
+
+    extkeys_initialize_settings(ks, keyfile_buffer);
+
+    return true;
 }

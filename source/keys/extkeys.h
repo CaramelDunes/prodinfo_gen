@@ -26,14 +26,20 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 #include <libs/fatfs/ff.h>
 
-#define NB_MASTER_KEYS  KB_FIRMWARE_VERSION_MAX + 1
+#define NB_MASTER_KEYS KB_FIRMWARE_VERSION_MAX + 1
 
-typedef struct keyset {
+typedef struct keyset
+{
     u8 master_keys[NB_MASTER_KEYS][0x10];
-    u8 device_key_4x[0x10];
+    u8 donor_device_master_keys[0x8][0x10];
+    u8 donor_device_key_4x[0x10];
+    u8 master_key_count;
 } keyset_t;
 
 bool parse_hex_key(unsigned char *key, const char *hex, unsigned int len);
 void extkeys_initialize_settings(keyset_t *keyset, char *filebuffer);
+int key_exists(const void *data);
+
+bool read_keys(keyset_t *ks);
 
 #endif

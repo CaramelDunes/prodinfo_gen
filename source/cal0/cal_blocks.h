@@ -6,18 +6,16 @@ typedef unsigned short int u16;
 
 typedef struct crc_block
 {
-    char *name;
-    u16 offset;
-    u16 size;
+    const char *name;
+    const u16 offset;
+    const u16 size;
 } crc_block_t;
 
 #define CRC_BLOCK(name, offset, size) \
-    const crc_block_t name##_block = {#name, offset, size}
+    static const crc_block_t name##_block = {#name, offset, size}
 
-#define SHA256_BLOCK(name, offset, size)  \
-    constexpr u16 name##_offset = offset; \
-    constexpr u16 name##_size = size;     \
-    constexpr bool name##_has_crc = false;
+#define SHA256_BLOCK(name, offset, size) \
+    static const crc_block_t name##_block = {#name, offset, size}
 
 #define OFFSET_OF_BLOCK(name) (name##_block.offset)
 #define SIZE_OF_BLOCK(name) (name##_block.size)
@@ -81,7 +79,10 @@ CRC_BLOCK(ExtendedSslKey, 0x3AE0, 0x140);
 CRC_BLOCK(ExtendedGameCardKey, 0x3C20, 0x140);
 CRC_BLOCK(LcdVendorId, 0x3D60, 0x10);
 
-const crc_block_t crc_blocks[] = {
+CRC_BLOCK(ExtendedRsa2048DeviceKey, 0x3D70, 0x250); // If the CRC value of this is valid, HOS will try to use it and may hang.
+CRC_BLOCK(Rsa2048DeviceCertificate, 0x3FC0, 0x250);
+
+static const crc_block_t crc_blocks[] = {
     BLOCK_OF(ConfigurationId1), // DEFAULT MP_00_01_00_00
 
     BLOCK_OF(WlanCountryCodes), // DEFAULT
@@ -140,6 +141,6 @@ const crc_block_t crc_blocks[] = {
 
 // SHA256_BLOCK(SslCertificate, 0x0AE0, 0x820), // WARNING, ONLY USE Size bytes to compute hash
 // SHA256_BLOCK(RandomNumber, 0x1300, 0x1020),
-// SHA256_BLOCK(GameCardCertificate, 0x2440, 0x420),
+SHA256_BLOCK(GameCardCertificate, 0x2440, 0x420);
 
 #endif
