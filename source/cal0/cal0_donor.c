@@ -131,6 +131,9 @@ void build_cal0_donor()
 
     gfx_printf("%kDonor PRODINFO looks valid\n version = %d\n device id = %s\n\n", colors[(color_idx++) % 6], donor_prodinfo_version, donor_prodinfo_device_id);
 
+    if (donor_prodinfo_version >= 9 && !key_exists(keyset.donor_device_key_4x))
+        WPRINTF("donor_device_key_4x has not been supplied, extended keys decryption might fail!");
+
     gfx_printf("%kWriting header\n", colors[(color_idx++) % 6]);
     write_header(prodinfo_buffer);
 
