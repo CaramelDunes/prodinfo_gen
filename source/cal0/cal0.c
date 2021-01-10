@@ -348,12 +348,14 @@ void write_ssl_certificate(u8 *prodinfo_buffer)
 
 void write_random_number(u8 *prodinfo_buffer, u64 device_id)
 {
-    memset(prodinfo_buffer + 0x1300, 0, 0x1000);
+    memset(prodinfo_buffer + OFFSET_OF_BLOCK(RandomNumber), 0, SIZE_OF_BLOCK(RandomNumber) - 0x20);
     u64 key[2] = {device_id, device_id};
     u8 ctr[0x10] = {0};
 
     se_aes_key_set(KEYSLOT_SWITCH_TEMPKEY, key, 0x10);
-    se_aes_crypt_ctr(KEYSLOT_SWITCH_TEMPKEY, prodinfo_buffer + 0x1300, 0x1000, prodinfo_buffer + 0x1300, 0x1000, ctr);
+    se_aes_crypt_ctr(KEYSLOT_SWITCH_TEMPKEY,
+                     prodinfo_buffer + OFFSET_OF_BLOCK(RandomNumber), SIZE_OF_BLOCK(RandomNumber) - 0x20,
+                     prodinfo_buffer + OFFSET_OF_BLOCK(RandomNumber), SIZE_OF_BLOCK(RandomNumber) - 0x20, ctr);
 }
 
 void write_config_id(u8 *prodinfo_buffer)
@@ -441,10 +443,10 @@ void write_all_crc(u8 *prodinfo_buffer, u32 prodinfo_size)
 void write_all_sha256(u8 *prodinfo_buffer)
 {
     // RandomNumber
-    se_calc_sha256_oneshot(prodinfo_buffer + 0x2300, prodinfo_buffer + 0x1300, 0x1000);
+    se_calc_sha256_oneshot(prodinfo_buffer + 0x2300, prodinfo_buffer + OFFSET_OF_BLOCK(RandomNumber), SIZE_OF_BLOCK(RandomNumber) - 0x20);
 
     // GameCardCertificate
-    se_calc_sha256_oneshot(prodinfo_buffer + 0x2840, prodinfo_buffer + 0x2440, 0x400);
+    se_calc_sha256_oneshot(prodinfo_buffer + 0x2840, prodinfo_buffer + OFFSET_OF_BLOCK(GameCardCertificate), SIZE_OF_BLOCK(GameCardCertificate) - 0x20);
 
     // SslCertificate
     u32 ssl_certificate_size = *(u32 *)(prodinfo_buffer + OFFSET_OF_BLOCK(SslCertificateSize));
