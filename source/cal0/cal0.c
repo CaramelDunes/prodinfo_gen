@@ -59,6 +59,16 @@ static inline void write64be(volatile void *qword, size_t offset, uint64_t value
     write64le(qword, offset, __builtin_bswap64(value));
 }
 
+static inline void write32le(volatile void *word, size_t offset, uint32_t value)
+{
+    *(uint32_t *)((uintptr_t)word + offset) = value;
+}
+
+static inline void write32be(volatile void *word, size_t offset, uint32_t value)
+{
+    write32le(word, offset, __builtin_bswap32(value));
+}
+
 void device_id_string(char device_id_string[0x11])
 {
     u64 device_id = fuse_get_device_id();
@@ -424,7 +434,7 @@ void write_short_values(u8 *prodinfo_buffer)
     memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(LcdBacklightBrightnessMapping), brightness_mapping, sizeof(brightness_mapping));
 
     u32 display_id = nyx_str->info.disp_id;
-    memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(LcdVendorId), &display_id, 3);
+    write32be(prodinfo_buffer, OFFSET_OF_BLOCK(LcdVendorId), display_id);
 }
 
 void write_all_crc(u8 *prodinfo_buffer, u32 prodinfo_size)
