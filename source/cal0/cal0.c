@@ -459,8 +459,8 @@ void write_short_values(u8 *prodinfo_buffer)
         0x00, 0x00, 0x80, 0x3F, 0x00, 0x00, 0x00, 0x00, 0x0A, 0xD7, 0xA3, 0x3C};
     memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(LcdBacklightBrightnessMapping), brightness_mapping, sizeof(brightness_mapping));
 
-    u32 display_id = nyx_str->info.disp_id;
-    write32be(prodinfo_buffer, OFFSET_OF_BLOCK(LcdVendorId), display_id);
+    u32 display_id = __builtin_bswap32(nyx_str->info.disp_id);
+    memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(LcdVendorId), (u8*)&display_id + 1, 3); // Skip leading 00.
 }
 
 void write_all_crc(u8 *prodinfo_buffer, u32 prodinfo_size)
