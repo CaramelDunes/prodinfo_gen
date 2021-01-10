@@ -219,13 +219,14 @@ void build_cal0_donor()
     if (!valid_own_prodinfo(prodinfo_buffer, prodinfo_size, keyset.master_keys[0]))
         WPRINTF("Something went wrong, writing output anyway...");
 
+    gfx_printf("\n%kWriting output file...\n", colors[(color_idx++) % 6]);
+
     if (!sd_mount())
     {
         EPRINTF("Unable to mount SD.");
         goto free_buffers;
     }
 
-    gfx_printf("\n%kWriting output file...\n", colors[(color_idx++) % 6]);
     f_mkdir("sd:/switch");
     char prodinfo_path[] = "sd:/switch/generated_prodinfo_from_donor.bin";
     if (!sd_save_to_file(prodinfo_buffer, prodinfo_size, prodinfo_path) && !f_stat(prodinfo_path, &fno))

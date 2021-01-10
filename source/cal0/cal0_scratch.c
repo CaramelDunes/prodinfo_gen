@@ -106,28 +106,30 @@ void build_cal0_scratch()
     gfx_printf("%kWriting blank serial number\n", colors[(color_idx++) % 6]);
     write_serial_number(prodinfo_buffer);
 
-    gfx_printf("%kWriting (empty) device certificate\n", colors[(color_idx++) % 6]);
-    write_device_certificate(prodinfo_buffer, device_id_as_string);
-
-    gfx_printf("%kWriting (empty) SSL certificate\n", colors[(color_idx++) % 6]);
-    write_ssl_certificate(prodinfo_buffer);
-
     gfx_printf("%kWriting random number\n", colors[(color_idx++) % 6]);
     write_random_number(prodinfo_buffer, device_id_int);
 
     gfx_printf("%kWriting battery lot\n", colors[(color_idx++) % 6]);
     write_battery_lot(prodinfo_buffer);
 
-    gfx_printf("%kWriting speaker calibration data\n", colors[(color_idx++) % 6]);
+    gfx_printf("%kWriting speaker calibration data\n\n", colors[(color_idx++) % 6]);
     write_speaker_calibration_value(prodinfo_buffer);
 
+    write_short_values(prodinfo_buffer);
+
+    // Certificates
+    gfx_printf("%kWriting empty device certificate\n", colors[(color_idx++) % 6]);
+    write_device_certificate(prodinfo_buffer, device_id_as_string);
+
+    gfx_printf("%kWriting empty SSL certificate\n\n", colors[(color_idx++) % 6]);
+    write_ssl_certificate(prodinfo_buffer);
+
+    // GCM blocks
     gfx_printf("%kWriting extended keys\n", colors[(color_idx++) % 6]);
     encrypt_extended_device_key(prodinfo_buffer, prodinfo_buffer + OFFSET_OF_BLOCK(ExtendedEccB233DeviceKey) + 0x10, device_id_int, keyset.master_keys[0]);
     encrypt_extended_eticket_key(prodinfo_buffer, prodinfo_buffer + OFFSET_OF_BLOCK(ExtendedRsa2048ETicketKey) + 0x10, device_id_int, keyset.master_keys[0]);
 
-    write_short_values(prodinfo_buffer);
-
-    gfx_printf("%kWriting checksums\n", colors[(color_idx++) % 6]);
+    gfx_printf("\n%kWriting checksums\n", colors[(color_idx++) % 6]);
     write_all_crc(prodinfo_buffer, prodinfo_size);
     write_all_sha256(prodinfo_buffer);
 
@@ -136,14 +138,13 @@ void build_cal0_scratch()
     if (!valid_own_prodinfo(prodinfo_buffer, prodinfo_size, keyset.master_keys[0]))
         gfx_printf("%kSomething went wrong, writing output anyway...\n", colors[(color_idx++) % 6]);
 
+    gfx_printf("\n%kWriting output file...\n", colors[(color_idx++) % 6]);
+
     if (!sd_mount())
     {
         EPRINTF("Unable to mount SD.");
         goto free_buffers;
     }
-
-    end_time = get_tmr_us();
-    gfx_printf("%kDone in %d us\n\n", colors[(color_idx++) % 6], end_time - begin_time);
 
     FILINFO fno;
     f_mkdir("sd:/switch");
@@ -154,6 +155,9 @@ void build_cal0_scratch()
     }
     else
         EPRINTF("Unable to save generated PRODINFO to SD.");
+
+    end_time = get_tmr_us();
+    gfx_printf("\n%kDone in %d us\n\n", colors[(color_idx++) % 6], end_time - begin_time);
 
 free_buffers:
     free(prodinfo_buffer);
