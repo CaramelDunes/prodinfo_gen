@@ -453,26 +453,26 @@ void write_all_sha256(u8 *prodinfo_buffer)
 
 void import_device_certificate(u8 *donor_prodinfo_buffer, u8 *prodinfo_buffer)
 {
-    memcpy(donor_prodinfo_buffer + OFFSET_OF_BLOCK(EccB233DeviceCertificate), prodinfo_buffer + OFFSET_OF_BLOCK(EccB233DeviceCertificate), SIZE_OF_BLOCK(EccB233DeviceCertificate));
+    memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(EccB233DeviceCertificate), donor_prodinfo_buffer + OFFSET_OF_BLOCK(EccB233DeviceCertificate), SIZE_OF_BLOCK(EccB233DeviceCertificate));
 }
 
 void import_eticket_certificate(u8 *donor_prodinfo_buffer, u8 *prodinfo_buffer)
 {
-    memcpy(donor_prodinfo_buffer + OFFSET_OF_BLOCK(Rsa2048ETicketCertificate), prodinfo_buffer + OFFSET_OF_BLOCK(Rsa2048ETicketCertificate), SIZE_OF_BLOCK(Rsa2048ETicketCertificate));
+    memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(Rsa2048ETicketCertificate), donor_prodinfo_buffer + OFFSET_OF_BLOCK(Rsa2048ETicketCertificate), SIZE_OF_BLOCK(Rsa2048ETicketCertificate));
 }
 
 void import_gamecard_certificate(u8 *donor_prodinfo_buffer, u8 *prodinfo_buffer)
 {
-    memcpy(donor_prodinfo_buffer + OFFSET_OF_BLOCK(GameCardCertificate), prodinfo_buffer + OFFSET_OF_BLOCK(GameCardCertificate), SIZE_OF_BLOCK(GameCardCertificate));
+    memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(GameCardCertificate), donor_prodinfo_buffer + OFFSET_OF_BLOCK(GameCardCertificate), SIZE_OF_BLOCK(GameCardCertificate));
 }
 
 void import_amiiboo_certificates(u8 *donor_prodinfo_buffer, u8 *prodinfo_buffer)
 {
-    memcpy(donor_prodinfo_buffer + OFFSET_OF_BLOCK(AmiiboEcqvCertificate), prodinfo_buffer + OFFSET_OF_BLOCK(AmiiboEcqvCertificate),
+    memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(AmiiboEcqvCertificate), donor_prodinfo_buffer + OFFSET_OF_BLOCK(AmiiboEcqvCertificate),
            SIZE_OF_BLOCK(AmiiboEcqvCertificate) +
                SIZE_OF_BLOCK(AmiiboEcdsaCertificate));
 
-    memcpy(donor_prodinfo_buffer + OFFSET_OF_BLOCK(AmiiboEcqvBlsCertificate), prodinfo_buffer + OFFSET_OF_BLOCK(AmiiboEcqvBlsCertificate),
+    memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(AmiiboEcqvBlsCertificate), donor_prodinfo_buffer + OFFSET_OF_BLOCK(AmiiboEcqvBlsCertificate),
            SIZE_OF_BLOCK(AmiiboEcqvBlsCertificate) +
                SIZE_OF_BLOCK(AmiiboEcqvBlsRootCertificate));
 }
