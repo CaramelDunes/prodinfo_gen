@@ -36,12 +36,14 @@ bool valid_rsa_2048_eticket_certificate(u8 *prodinfo_buffer);
 bool valid_cal0_signature(u8 *prodinfo_buffer, u32 prodinfo_size);
 bool valid_body_checksum(u8 *prodinfo_buffer, u32 prodinfo_size);
 bool valid_extended_gamecard_key(u8 *prodinfo_buffer, u8 *master_key);
+bool valid_sha256_blocks(u8 *prodinfo_buffer, u32 prodinfo_size);
 
 // Import
 void import_device_certificate(u8 *donor_prodinfo_buffer, u8 *prodinfo_buffer);
 void import_eticket_certificate(u8 *donor_prodinfo_buffer, u8 *prodinfo_buffer);
 void import_gamecard_certificate(u8 *donor_prodinfo_buffer, u8 *prodinfo_buffer);
 void import_amiiboo_certificates(u8 *donor_prodinfo_buffer, u8 *prodinfo_buffer);
+
 bool decrypt_extended_device_key(u8 *donor_prodinfo_buffer, u8 extended_device_key[0x30], u8 *master_key);
 void encrypt_extended_device_key(u8 *prodinfo_buffer, u8 extended_device_key[0x30], u64 device_id, u8 *master_key);
 bool decrypt_extended_eticket_key(u8 *donor_prodinfo_buffer, u8 extended_eticket_key[0x220], u8 *master_key);

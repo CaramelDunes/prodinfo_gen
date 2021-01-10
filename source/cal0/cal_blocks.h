@@ -106,7 +106,6 @@ CRC_BLOCK(TouchIcVendorId, 0x4320, 0x10);
 CRC_BLOCK(ColorModel, 0x4330, 0x10);
 CRC_BLOCK(ConsoleSixAxisSensorMountType, 0x4340, 0x10);
 
-
 static const crc_block_t crc_blocks[] = {
     BLOCK_OF(ConfigurationId1), // DEFAULT MP_00_01_00_00
 
@@ -164,7 +163,7 @@ static const crc_block_t crc_blocks[] = {
     BLOCK_OF(ExtendedGameCardKey),
     BLOCK_OF(LcdVendorId)};
 
-// SHA256_BLOCK(SslCertificate, 0x0AE0, 0x820), // WARNING, ONLY USE Size bytes to compute hash
+SHA256_BLOCK(SslCertificate, 0x0AE0, 0x820); // WARNING, ONLY USE Size bytes to compute hash
 SHA256_BLOCK(RandomNumber, 0x1300, 0x1020);
 SHA256_BLOCK(GameCardCertificate, 0x2440, 0x420);
 

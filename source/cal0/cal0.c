@@ -90,15 +90,15 @@ bool valid_prodinfo_checksums(u8 *prodinfo_buffer, u32 prodinfo_size)
            prodinfo_size <= prodinfo_max_size &&
            valid_cal0_signature(prodinfo_buffer, prodinfo_size) &&
            valid_crcs(prodinfo_buffer, prodinfo_size) &&
-           valid_body_checksum(prodinfo_buffer, prodinfo_size);
+           valid_body_checksum(prodinfo_buffer, prodinfo_size) &&
+           valid_sha256_blocks(prodinfo_buffer, prodinfo_size);
 }
 
 bool valid_own_prodinfo(u8 *prodinfo_buffer, u32 prodinfo_size, u8 *master_key)
 {
     return valid_prodinfo_checksums(prodinfo_buffer, prodinfo_size) &&
            valid_extended_rsa_2048_eticket_key(prodinfo_buffer, master_key) &&
-           valid_extended_ecc_b233_device_key(prodinfo_buffer, master_key) &&
-           valid_extended_gamecard_key(prodinfo_buffer, master_key);
+           valid_extended_ecc_b233_device_key(prodinfo_buffer, master_key);
 }
 
 bool valid_crcs(u8 *prodinfo_buffer, u32 prodinfo_size)
@@ -113,6 +113,32 @@ bool valid_crcs(u8 *prodinfo_buffer, u32 prodinfo_size)
         if (!has_valid_crc16(prodinfo_buffer, crc_blocks[i].offset, crc_blocks[i].size))
             return false;
     }
+
+    return true;
+}
+
+bool valid_sha256_blocks(u8 *prodinfo_buffer, u32 prodinfo_size)
+{
+    u8 hash[0x20] = {0};
+
+    // RandomNumber
+    se_calc_sha256_oneshot(hash, prodinfo_buffer + OFFSET_OF_BLOCK(RandomNumber), SIZE_OF_BLOCK(RandomNumber) - 0x20);
+
+    if (memcmp(hash, prodinfo_buffer + OFFSET_OF_BLOCK(RandomNumber) + SIZE_OF_BLOCK(RandomNumber) - 0x20, 0x20) != 0)
+        return false;
+
+    // GameCardCertificate
+    se_calc_sha256_oneshot(hash, prodinfo_buffer + OFFSET_OF_BLOCK(GameCardCertificate), SIZE_OF_BLOCK(GameCardCertificate) - 0x20);
+
+    if (memcmp(hash, prodinfo_buffer + OFFSET_OF_BLOCK(GameCardCertificate) + SIZE_OF_BLOCK(GameCardCertificate) - 0x20, 0x20) != 0)
+        return false;
+
+    // SslCertificate
+    u32 ssl_certificate_size = *(u32 *)(prodinfo_buffer + OFFSET_OF_BLOCK(SslCertificateSize));
+    se_calc_sha256_oneshot(hash, prodinfo_buffer + OFFSET_OF_BLOCK(SslCertificate), ssl_certificate_size);
+
+    if (memcmp(hash, prodinfo_buffer + OFFSET_OF_BLOCK(SslCertificate) + SIZE_OF_BLOCK(SslCertificate) - 0x20, 0x20) != 0)
+        return false;
 
     return true;
 }
