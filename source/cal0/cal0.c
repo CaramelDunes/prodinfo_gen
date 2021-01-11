@@ -89,7 +89,7 @@ bool valid_prodinfo_checksums(u8 *prodinfo_buffer, u32 prodinfo_size)
     return prodinfo_size >= prodinfo_min_size &&
            prodinfo_size <= prodinfo_max_size &&
            valid_cal0_signature(prodinfo_buffer, prodinfo_size) &&
-           valid_crcs(prodinfo_buffer, prodinfo_size) &&
+        //    valid_crcs(prodinfo_buffer, prodinfo_size) &&
            valid_body_checksum(prodinfo_buffer, prodinfo_size) &&
            valid_sha256_blocks(prodinfo_buffer, prodinfo_size);
 }
@@ -417,6 +417,9 @@ void write_header(u8 *prodinfo_buffer)
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x71, 0x0E};
 
     memcpy(prodinfo_buffer, header, sizeof(header));
+
+    u32 size = 0x7FC0;
+    memcpy(prodinfo_buffer + 0x8, &size, 4);
 }
 
 void write_sensors_offset_scale(u8 *prodinfo_buffer)
@@ -461,6 +464,23 @@ void write_short_values(u8 *prodinfo_buffer)
 
     u32 display_id = __builtin_bswap32(nyx_str->info.disp_id);
     memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(LcdVendorId), (u8*)&display_id + 1, 3); // Skip leading 00.
+
+    // prodinfo_buffer[OFFSET_OF_BLOCK(UsbTypeCPowerSourceCircuitVersion)] = 1;
+    // prodinfo_buffer[OFFSET_OF_BLOCK(TouchIcVendorId)] = 1;
+
+    prodinfo_buffer[OFFSET_OF_BLOCK(ColorVariation)] = 1;
+
+    u8 color[4] = {0x0, 0xFF, 0xFF, 0xFF};
+    u8 color2[4] = {0x0, 0xFF, 0x00, 0xFF}; // Round bezel
+    u8 color3[4] = {0xFF, 0x00, 0x00, 0xFF}; // Border
+    u8 color4[4] = {0xFF, 0x00, 0xFF, 0xFF}; // Unused?
+    u8 color5[4] = {0xFF, 0xFF, 0x00, 0xFF}; // Unused?
+
+    memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(HousingSubColor), color, 4);
+    memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(HousingBezelColor), color2, 4);
+    memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(HousingMainColor1), color3, 4);
+    memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(HousingMainColor2), color4, 4);
+    memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(HousingMainColor3), color5, 4);
 }
 
 void write_all_crc(u8 *prodinfo_buffer, u32 prodinfo_size)

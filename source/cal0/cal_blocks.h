@@ -68,7 +68,7 @@ CRC_BLOCK(AmiiboEcqvBlsCertificate, 0x3670, 0x30);
 CRC_BLOCK(AmiiboEcqvBlsRootCertificate, 0x36A0, 0xA0);
 
 CRC_BLOCK(ProductModel, 0x3740, 0x10);                     // DEFAULT Nx = 1
-CRC_BLOCK(HomeMenuSchemeMainColorVariation, 0x3750, 0x10); // DEFAULT 0
+CRC_BLOCK(ColorVariation, 0x3750, 0x10); // DEFAULT 0
 CRC_BLOCK(LcdBacklightBrightnessMapping, 0x3760, 0x10);    // DEFAULT 00 00 80 3F 00 00 00 00 0A D7 A3 3C
 
 CRC_BLOCK(ExtendedEccB233DeviceKey, 0x3770, 0x60);
@@ -152,7 +152,7 @@ static const crc_block_t crc_blocks[] = {
     BLOCK_OF(AmiiboEcqvBlsRootCertificate),
 
     BLOCK_OF(ProductModel),
-    BLOCK_OF(HomeMenuSchemeMainColorVariation),
+    BLOCK_OF(ColorVariation),
     BLOCK_OF(LcdBacklightBrightnessMapping),
 
     BLOCK_OF(ExtendedEccB233DeviceKey),
@@ -161,7 +161,32 @@ static const crc_block_t crc_blocks[] = {
     BLOCK_OF(ExtendedRsa2048ETicketKey),
     BLOCK_OF(ExtendedSslKey),
     BLOCK_OF(ExtendedGameCardKey),
-    BLOCK_OF(LcdVendorId)};
+    BLOCK_OF(LcdVendorId),
+
+    // BLOCK_OF(UsbTypeCPowerSourceCircuitVersion),
+
+    BLOCK_OF(HousingSubColor),
+    BLOCK_OF(HousingBezelColor),
+    BLOCK_OF(HousingMainColor1),
+    BLOCK_OF(HousingMainColor2),
+    BLOCK_OF(HousingMainColor3),
+
+    // BLOCK_OF(AnalogStickModuleTypeL),
+    // BLOCK_OF(AnalogStickModelParameterL),
+    // BLOCK_OF(AnalogStickFactoryCalibrationL),
+
+    // BLOCK_OF(AnalogStickModuleTypeR),
+    // BLOCK_OF(AnalogStickModelParameterR),
+    // BLOCK_OF(AnalogStickFactoryCalibrationR),
+
+    // BLOCK_OF(ConsoleSixAxisSensorModuleType),
+    // BLOCK_OF(ConsoleSixAxisSensorHorizontalOffset),
+
+    // BLOCK_OF(BatteryVersion),
+    // BLOCK_OF(TouchIcVendorId),
+    BLOCK_OF(ColorModel)
+    // BLOCK_OF(ConsoleSixAxisSensorMountType)
+    };
 
 SHA256_BLOCK(SslCertificate, 0x0AE0, 0x820); // WARNING, ONLY USE Size bytes to compute hash
 SHA256_BLOCK(RandomNumber, 0x1300, 0x1020);
