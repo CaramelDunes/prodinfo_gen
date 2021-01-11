@@ -18,7 +18,6 @@
 
 #include "../config.h"
 #include <gfx/di.h>
-#include <gfx_utils.h>
 #include "../gfx/tui.h"
 #include "../storage/emummc.h"
 #include <storage/nx_sd.h>
@@ -34,7 +33,8 @@
 #include "gcm.h"
 #include "crc16.h"
 #include "cal0.h"
-#include "keyfile_read.h"
+#include "cal_blocks.h"
+#include "../keys/extkeys.h"
 
 extern hekate_config h_cfg;
 
@@ -45,18 +45,6 @@ extern u32 secindex;
 static u32 color_idx = 0;
 static u32 start_time, end_time;
 
-#define TPRINTF(text)                                           \
-    end_time = get_tmr_us();                                    \
-    gfx_printf(text " done in %d us\n", end_time - start_time); \
-    start_time = get_tmr_us();                                  \
-    minerva_periodic_training()
-
-#define TPRINTFARGS(text, args...)                                    \
-    end_time = get_tmr_us();                                          \
-    gfx_printf(text " done in %d us\n", args, end_time - start_time); \
-    start_time = get_tmr_us();                                        \
-    minerva_periodic_training()
-
 static inline u32 _read_le_u32(const void *buffer, u32 offset)
 {
     return (*(u8 *)(buffer + offset + 0)) |
@@ -65,7 +53,7 @@ static inline u32 _read_le_u32(const void *buffer, u32 offset)
            (*(u8 *)(buffer + offset + 3) << 0x18);
 }
 
-void unseal_key(u8 *kek_source, u8 *kekek_source, u8 *master_key_0, u8 *dest, u8 usecase);
+u8 *_master_key_from_key_generation(u8 donor_prodinfo_version, u8 key_generation, keyset_t *keyset);
 
 void build_cal0_donor()
 {
@@ -80,8 +68,9 @@ void build_cal0_donor()
 
     tui_sbar(true);
 
-    u8 master_key_0[0x10] = {0};
-    if (!read_master_key_0(master_key_0) || get_crc_16(master_key_0, 0x10) != 0x801B)
+    keyset_t keyset = {0};
+
+    if (!read_keys(&keyset) || keyset.master_key_count == 0 || get_crc_16(keyset.master_keys[0], 0x10) != 0x801B)
     {
         gfx_printf("Couldn't get master_key_00 from sd:/switch/prod.keys\n", colors[(color_idx++) % 6]);
         goto out_wait;
@@ -120,41 +109,123 @@ void build_cal0_donor()
     }
 
     // Read donor prodinfo.
-    u32 prodinfo_size = 0;
-    u8 *prodinfo_buffer = sd_file_read(donor_prodinfo_path, &prodinfo_size);
+    u32 donor_prodinfo_size = 0;
+    u8 *donor_prodinfo_buffer = sd_file_read(donor_prodinfo_path, &donor_prodinfo_size);
 
-    if (!valid_donor_prodinfo(prodinfo_buffer, prodinfo_size))
-        gfx_printf("Donor PRODINFO seems invalid.");
-    else
-        gfx_printf("%kLooks like a valid donor PRODINFO.\n", colors[(color_idx++) % 6]);
+    u32 prodinfo_size = 0x3FBC00;
+    u8 *prodinfo_buffer = malloc(prodinfo_size);
+    memset(prodinfo_buffer, 0, prodinfo_size);
 
-    gfx_printf("%kWriting device certificate\n", colors[(color_idx++) % 6]);
+    u8 key_generation = 0;
+    u8 *master_key = keyset.master_keys[0];
+
+    if (!valid_prodinfo_checksums(donor_prodinfo_buffer, donor_prodinfo_size))
+    {
+        EPRINTF("Donor PRODINFO seems invalid.");
+        goto free_buffers;
+    }
+
+    u32 donor_prodinfo_version = _read_le_u32(donor_prodinfo_buffer, 0x4);
+    char donor_prodinfo_device_id[0x11] = {0};
+    memcpy(donor_prodinfo_device_id, donor_prodinfo_buffer + OFFSET_OF_BLOCK(EccB233DeviceCertificate) + 0xC6, 0x10);
+
+    gfx_printf("%kDonor PRODINFO looks valid\n version = %d\n device id = %s\n\n", colors[(color_idx++) % 6], donor_prodinfo_version, donor_prodinfo_device_id);
+
+    if (donor_prodinfo_version >= 9 && !key_exists(keyset.donor_device_key_4x))
+        WPRINTF("donor_device_key_4x has not been supplied, extended keys decryption might fail!");
+
+    gfx_printf("%kWriting header\n", colors[(color_idx++) % 6]);
+    write_header(prodinfo_buffer);
+
+    gfx_printf("%kWriting config id\n", colors[(color_idx++) % 6]);
+    write_config_id(prodinfo_buffer);
+
+    gfx_printf("%kWriting Wlan country codes\n", colors[(color_idx++) % 6]);
+    write_wlan_country_codes(prodinfo_buffer);
+
+    gfx_printf("%kWriting MAC addresses\n", colors[(color_idx++) % 6]);
+    write_mac_addresses(prodinfo_buffer, device_id_int);
+
+    gfx_printf("%kWriting sensors calibration data\n", colors[(color_idx++) % 6]);
+    write_sensors_offset_scale(prodinfo_buffer);
+
+    gfx_printf("%kWriting blank serial number\n", colors[(color_idx++) % 6]);
+    write_serial_number(prodinfo_buffer);
+
+    gfx_printf("%kWriting random number\n", colors[(color_idx++) % 6]);
+    write_random_number(prodinfo_buffer, device_id_int);
+
+    gfx_printf("%kWriting battery lot\n", colors[(color_idx++) % 6]);
+    write_battery_lot(prodinfo_buffer);
+
+    gfx_printf("%kWriting speaker calibration data\n\n", colors[(color_idx++) % 6]);
+    write_speaker_calibration_value(prodinfo_buffer);
+
+    write_short_values(prodinfo_buffer);
+
+    // Certificates
+    gfx_printf("%kWriting empty SSL certificate\n", colors[(color_idx++) % 6]);
+    write_ssl_certificate(prodinfo_buffer);
+
+    gfx_printf("%kImporting device certificate\n", colors[(color_idx++) % 6]);
+    import_device_certificate(donor_prodinfo_buffer, prodinfo_buffer); // Probably useless as we need to corrupt it for HOS to boot...
     write_device_certificate(prodinfo_buffer, device_id_as_string);
 
-    gfx_printf("%kWriting ETicket certificate\n", colors[(color_idx++) % 6]);
-    write_eticket_certificate(prodinfo_buffer, device_id_as_string);
+    gfx_printf("%kImporting ETicket certificate\n", colors[(color_idx++) % 6]);
+    import_eticket_certificate(donor_prodinfo_buffer, prodinfo_buffer);
 
-    gfx_printf("%kWriting extended keys\n", colors[(color_idx++) % 6]);
-    write_extended_ecc_b233_device_key(prodinfo_buffer, device_id_int, master_key_0);
-    write_extended_rsa_2048_eticket_key(prodinfo_buffer, device_id_int, master_key_0);
-    write_extended_gamecard_key(prodinfo_buffer, device_id_int, master_key_0);
+    gfx_printf("%kImporting Amiibo certificates\n", colors[(color_idx++) % 6]);
+    import_amiiboo_certificates(donor_prodinfo_buffer, prodinfo_buffer);
 
-    gfx_printf("%kWriting checksums\n", colors[(color_idx++) % 6]);
+    gfx_printf("%kImporting GameCard certificate\n\n", colors[(color_idx++) % 6]);
+    import_gamecard_certificate(donor_prodinfo_buffer, prodinfo_buffer);
+
+    // GCM blocks
+    gfx_printf("%kImporting extended Device key\n", colors[(color_idx++) % 6]);
+    key_generation = *(donor_prodinfo_buffer + OFFSET_OF_BLOCK(ExtendedEccB233DeviceKey) + SIZE_OF_BLOCK(ExtendedEccB233DeviceKey) - 0x10) - 1;
+    master_key = _master_key_from_key_generation(donor_prodinfo_version, key_generation, &keyset);
+
+    if (!decrypt_extended_device_key(donor_prodinfo_buffer, prodinfo_buffer + OFFSET_OF_BLOCK(ExtendedEccB233DeviceKey) + 0x10, master_key))
+        WPRINTF("Could not decrypt donor extended Device key!");
+
+    encrypt_extended_device_key(prodinfo_buffer, prodinfo_buffer + OFFSET_OF_BLOCK(ExtendedEccB233DeviceKey) + 0x10, device_id_int, keyset.master_keys[0]);
+
+    gfx_printf("%kImporting extended ETicket key\n", colors[(color_idx++) % 6]);
+
+    key_generation = *(donor_prodinfo_buffer + OFFSET_OF_BLOCK(ExtendedRsa2048ETicketKey) + SIZE_OF_BLOCK(ExtendedRsa2048ETicketKey) - 0x10) - 1;
+    master_key = _master_key_from_key_generation(donor_prodinfo_version, key_generation, &keyset);
+
+    if (!decrypt_extended_eticket_key(donor_prodinfo_buffer, prodinfo_buffer + OFFSET_OF_BLOCK(ExtendedRsa2048ETicketKey) + 0x10, master_key))
+        WPRINTF("Could not decrypt donor extended ETicket key!");
+
+    encrypt_extended_eticket_key(prodinfo_buffer, prodinfo_buffer + OFFSET_OF_BLOCK(ExtendedRsa2048ETicketKey) + 0x10, device_id_int, keyset.master_keys[0]);
+
+    gfx_printf("%kImporting extended GameCard key\n", colors[(color_idx++) % 6]);
+
+    key_generation = *(donor_prodinfo_buffer + OFFSET_OF_BLOCK(ExtendedGameCardKey) + SIZE_OF_BLOCK(ExtendedGameCardKey) - 0x10) - 1;
+    master_key = _master_key_from_key_generation(donor_prodinfo_version, key_generation, &keyset);
+
+    if (!decrypt_extended_gamecard_key(donor_prodinfo_buffer, prodinfo_buffer + OFFSET_OF_BLOCK(ExtendedGameCardKey) + 0x10, master_key))
+        WPRINTF("Could not decrypt donor extended GameCard key!");
+
+    encrypt_extended_gamecard_key(prodinfo_buffer, prodinfo_buffer + OFFSET_OF_BLOCK(ExtendedGameCardKey) + 0x10, device_id_int, keyset.master_keys[0]);
+
+    gfx_printf("%k\nWriting checksums\n", colors[(color_idx++) % 6]);
     write_all_crc(prodinfo_buffer, prodinfo_size);
     write_all_sha256(prodinfo_buffer);
 
     write_body_checksum(prodinfo_buffer);
 
-    if (!valid_own_prodinfo(prodinfo_buffer, prodinfo_size, master_key_0))
-        gfx_printf("%kSomething went wrong, writing output anyway...\n", colors[(color_idx++) % 6]);
+    if (!valid_own_prodinfo(prodinfo_buffer, prodinfo_size, keyset.master_keys[0]))
+        WPRINTF("Something went wrong, writing output anyway...");
+
+    gfx_printf("\n%kWriting output file...\n", colors[(color_idx++) % 6]);
 
     if (!sd_mount())
     {
         EPRINTF("Unable to mount SD.");
         goto free_buffers;
     }
-    end_time = get_tmr_us();
-    gfx_printf("%kDone in %d us\n\n", colors[(color_idx++) % 6], end_time - begin_time);
 
     f_mkdir("sd:/switch");
     char prodinfo_path[] = "sd:/switch/generated_prodinfo_from_donor.bin";
@@ -165,10 +236,30 @@ void build_cal0_donor()
     else
         EPRINTF("Unable to save generated PRODINFO to SD.");
 
+    end_time = get_tmr_us();
+    gfx_printf("\n%kDone in %d us\n\n", colors[(color_idx++) % 6], end_time - begin_time);
+
 free_buffers:
     free(prodinfo_buffer);
 
 out_wait:
     gfx_printf("\n%kPress any key to return to the main menu.", colors[(color_idx++) % 6]);
     btn_wait();
+}
+
+u8 *_master_key_from_key_generation(u8 donor_prodinfo_version, u8 key_generation, keyset_t *keyset)
+{
+    u8 *master_key = keyset->master_keys[0];
+
+    if (donor_prodinfo_version >= 9)
+    {
+        u8 offset_key_generation = key_generation - 3;
+
+        if (offset_key_generation >= 0 && offset_key_generation < 0x8 && key_exists(keyset->donor_device_master_keys[offset_key_generation]))
+        {
+            master_key = keyset->donor_device_master_keys[offset_key_generation];
+        }
+    }
+
+    return master_key;
 }

@@ -22,29 +22,27 @@
 #include <sec/se.h>
 #include <sec/se_t210.h>
 #include <soc/fuse.h>
+#include <utils/util.h>
 
 #include "cal_blocks.h"
 
 #include "crc16.h"
 
-static const u8 es_kek_source[0x10] = {0x7f, 0x5b, 0xb0, 0x84, 0x7b, 0x25, 0xaa, 0x67, 0xfa, 0xc8, 0x4b, 0xe2, 0x3d, 0x7b, 0x69, 0x03};
-static const u8 prod_kekek_source[0x10] = {0xaf, 0x44, 0xf3, 0x3e, 0x82, 0x4e, 0x83, 0x92, 0xed, 0x38, 0xe1, 0x2f, 0x29, 0xcf, 0x6f, 0x4d};
-static const u8 eticket_rsa_kekek_source[0x10] = {0x46, 0x6e, 0x57, 0xb7, 0x4a, 0x44, 0x7f, 0x02, 0xf3, 0x21, 0xcd, 0xe5, 0x8f, 0x2f, 0x55, 0x35};
-static const u8 eticket_rsa_kek_source[0x10] = {0xdb, 0xa4, 0x51, 0x12, 0x4c, 0xa0, 0xa9, 0x83, 0x68, 0x14, 0xf5, 0xed, 0x95, 0xe3, 0x12, 0x5b};
+#include "../hos/hos.h"
+#include "../keys/key_sources.inl"
 
-static const u8 lotus_kekek_source[0x10] = {
-    0xD0, 0xCC, 0xDE, 0x8D, 0x10, 0x98, 0x67, 0x2F, 0x64, 0x9A, 0x1E, 0xC4, 0xFE, 0x85, 0x62, 0xF0};
-static const u8 lotus_kek_source[0x10] = {
-    0xC3, 0xB5, 0x86, 0x0A, 0xE9, 0xF7, 0x80, 0xF5, 0xAF, 0xA8, 0x49, 0x2D, 0xD4, 0x33, 0xB5, 0xA9};
+static const u8 es_kek_source_x[0x10] = {0x7f, 0x5b, 0xb0, 0x84, 0x7b, 0x25, 0xaa, 0x67, 0xfa, 0xc8, 0x4b, 0xe2, 0x3d, 0x7b, 0x69, 0x03};
+static const u8 es_kek_source_y[0x10] = {0xaf, 0x44, 0xf3, 0x3e, 0x82, 0x4e, 0x83, 0x92, 0xed, 0x38, 0xe1, 0x2f, 0x29, 0xcf, 0x6f, 0x4d};
 
-static const u8 aes_kek_seed_01[0x10] = {0xA2, 0xAB, 0xBF, 0x9C, 0x92, 0x2F, 0xBB, 0xE3, 0x78, 0x79, 0x9B, 0xC0, 0xCC, 0xEA, 0xA5, 0x74};
+static const u8 lotus_kek_source_x[0x10] = {0xD0, 0xCC, 0xDE, 0x8D, 0x10, 0x98, 0x67, 0x2F, 0x64, 0x9A, 0x1E, 0xC4, 0xFE, 0x85, 0x62, 0xF0};
+static const u8 lotus_kek_source_y[0x10] = {0xC3, 0xB5, 0x86, 0x0A, 0xE9, 0xF7, 0x80, 0xF5, 0xAF, 0xA8, 0x49, 0x2D, 0xD4, 0x33, 0xB5, 0xA9};
+
 static const u8 aes_kek_seed_02[0x10] = {0x57, 0xE2, 0xD9, 0x45, 0xE4, 0x92, 0xF4, 0xFD, 0xC3, 0xF9, 0x86, 0x38, 0x89, 0x78, 0x9F, 0x3C};
-static const u8 aes_kek_seed_03[0x10] = {0xE5, 0x4D, 0x9A, 0x02, 0xF0, 0x4F, 0x5F, 0xA8, 0xAD, 0x76, 0x0A, 0xF6, 0x32, 0x95, 0x59, 0xBB};
-static const u8 aes_kek_generation_source[0x10] = {
-    0x4D, 0x87, 0x09, 0x86, 0xC4, 0x5D, 0x20, 0x72, 0x2F, 0xBA, 0x10, 0x53, 0xDA, 0x92, 0xE8, 0xA9};
 
 static const u32 prodinfo_min_size = 0x3D70;
 static const u32 prodinfo_max_size = 0x003FBC00;
+
+extern volatile nyx_storage_t *nyx_str;
 
 static inline uint64_t read64le(const volatile void *qword, size_t offset)
 {
@@ -59,6 +57,16 @@ static inline void write64le(volatile void *qword, size_t offset, uint64_t value
 static inline void write64be(volatile void *qword, size_t offset, uint64_t value)
 {
     write64le(qword, offset, __builtin_bswap64(value));
+}
+
+static inline void write32le(volatile void *word, size_t offset, uint32_t value)
+{
+    *(uint32_t *)((uintptr_t)word + offset) = value;
+}
+
+static inline void write32be(volatile void *word, size_t offset, uint32_t value)
+{
+    write32le(word, offset, __builtin_bswap32(value));
 }
 
 void device_id_string(char device_id_string[0x11])
@@ -76,21 +84,21 @@ void device_id_string(char device_id_string[0x11])
     }
 }
 
-bool valid_donor_prodinfo(u8 *prodinfo_buffer, u32 prodinfo_size)
+bool valid_prodinfo_checksums(u8 *prodinfo_buffer, u32 prodinfo_size)
 {
     return prodinfo_size >= prodinfo_min_size &&
            prodinfo_size <= prodinfo_max_size &&
            valid_cal0_signature(prodinfo_buffer, prodinfo_size) &&
            valid_crcs(prodinfo_buffer, prodinfo_size) &&
-           valid_body_checksum(prodinfo_buffer, prodinfo_size);
+           valid_body_checksum(prodinfo_buffer, prodinfo_size) &&
+           valid_sha256_blocks(prodinfo_buffer, prodinfo_size);
 }
 
-bool valid_own_prodinfo(u8 *prodinfo_buffer, u32 prodinfo_size, u8 *master_key_0)
+bool valid_own_prodinfo(u8 *prodinfo_buffer, u32 prodinfo_size, u8 *master_key)
 {
-    return valid_donor_prodinfo(prodinfo_buffer, prodinfo_size) &&
-           valid_extended_rsa_2048_eticket_key(prodinfo_buffer, master_key_0) &&
-           valid_extended_ecc_b233_device_key(prodinfo_buffer, master_key_0) &&
-           valid_extended_gamecard_key(prodinfo_buffer, master_key_0);
+    return valid_prodinfo_checksums(prodinfo_buffer, prodinfo_size) &&
+           valid_extended_rsa_2048_eticket_key(prodinfo_buffer, master_key) &&
+           valid_extended_ecc_b233_device_key(prodinfo_buffer, master_key);
 }
 
 bool valid_crcs(u8 *prodinfo_buffer, u32 prodinfo_size)
@@ -109,6 +117,32 @@ bool valid_crcs(u8 *prodinfo_buffer, u32 prodinfo_size)
     return true;
 }
 
+bool valid_sha256_blocks(u8 *prodinfo_buffer, u32 prodinfo_size)
+{
+    u8 hash[0x20] = {0};
+
+    // RandomNumber
+    se_calc_sha256_oneshot(hash, prodinfo_buffer + OFFSET_OF_BLOCK(RandomNumber), SIZE_OF_BLOCK(RandomNumber) - 0x20);
+
+    if (memcmp(hash, prodinfo_buffer + OFFSET_OF_BLOCK(RandomNumber) + SIZE_OF_BLOCK(RandomNumber) - 0x20, 0x20) != 0)
+        return false;
+
+    // GameCardCertificate
+    se_calc_sha256_oneshot(hash, prodinfo_buffer + OFFSET_OF_BLOCK(GameCardCertificate), SIZE_OF_BLOCK(GameCardCertificate) - 0x20);
+
+    if (memcmp(hash, prodinfo_buffer + OFFSET_OF_BLOCK(GameCardCertificate) + SIZE_OF_BLOCK(GameCardCertificate) - 0x20, 0x20) != 0)
+        return false;
+
+    // SslCertificate
+    u32 ssl_certificate_size = *(u32 *)(prodinfo_buffer + OFFSET_OF_BLOCK(SslCertificateSize));
+    se_calc_sha256_oneshot(hash, prodinfo_buffer + OFFSET_OF_BLOCK(SslCertificate), ssl_certificate_size);
+
+    if (memcmp(hash, prodinfo_buffer + OFFSET_OF_BLOCK(SslCertificate) + SIZE_OF_BLOCK(SslCertificate) - 0x20, 0x20) != 0)
+        return false;
+
+    return true;
+}
+
 static void _generate_kek(u32 ks, const void *key_source, void *master_key, const void *kek_seed)
 {
     se_aes_key_set(ks, master_key, 0x10);
@@ -116,7 +150,7 @@ static void _generate_kek(u32 ks, const void *key_source, void *master_key, cons
     se_aes_unwrap_key(ks, ks, key_source);
 }
 
-void unseal_key(const u8 *kek_source, const u8 *kekek_source, u8 *master_key_0, u8 *dest, u8 usecase)
+void unseal_key(const u8 *kek_source_x, const u8 *kek_source_y, u8 *master_key, u8 *dest, u8 usecase)
 {
     u8 temp_key[0x10] = {0};
     const u8 *seed = NULL;
@@ -142,10 +176,11 @@ void unseal_key(const u8 *kek_source, const u8 *kekek_source, u8 *master_key_0, 
     for (u32 i = 0; i < 0x10; i++)
         temp_key[i] = aes_kek_generation_source[i] ^ seed[i];
 
-    _generate_kek(KEYSLOT_SWITCH_TEMPKEY, kek_source, master_key_0, temp_key);
-    se_aes_crypt_block_ecb(KEYSLOT_SWITCH_TEMPKEY, 0, dest, kekek_source);
+    _generate_kek(KEYSLOT_SWITCH_TEMPKEY, kek_source_x, master_key, temp_key);
+    se_aes_crypt_block_ecb(KEYSLOT_SWITCH_TEMPKEY, 0, dest, kek_source_y);
 }
 
+// Assumes key is in KEYSLOT_SWITCH_TEMPKEY.
 void ghash_calc(const u8 *plaintext, u32 plaintext_size, const u8 ctr[0x10], u8 *dest)
 {
     /* J = GHASH(CTR); */
@@ -158,34 +193,32 @@ void ghash_calc(const u8 *plaintext, u32 plaintext_size, const u8 ctr[0x10], u8 
     ghash(dest, plaintext, plaintext_size, j_block, true);
 }
 
-static int _is_valid_gcm_content(const u8 *ctr, u8 *ciphertext, u32 ciphertext_size, u32 ks)
+// Assumes key is in KEYSLOT_SWITCH_TEMPKEY.
+static bool _decrypt_gcm_block(const u8 *block, u32 block_size, u8 *plaintext)
 {
-    u32 plaintext_size = ciphertext_size;
-    u8 *encrypted_ghash = ciphertext + ciphertext_size;
-
-    u8 *plaintext = malloc(plaintext_size);
+    const u8 *ctr = block;
+    const u8 *ciphertext = block + 0x10;
+    u32 plaintext_size = block_size - 0x20; // Substract CTR and MAC sizes.
+    const u8 *encrypted_ghash = ciphertext + plaintext_size;
 
     se_aes_crypt_ctr(KEYSLOT_SWITCH_TEMPKEY, plaintext, plaintext_size, ciphertext, plaintext_size, ctr);
+
+    // u64 file_device_id = *(u64 *)(plaintext + plaintext_size - 0x8) & 0x00FFFFFFFFFFFFFFULL;
+    // gfx_hexdump(0, plaintext + plaintext_size - 0x10, 0x10);
 
     uint8_t calc_mac[0x10];
     ghash_calc(plaintext, plaintext_size, ctr, calc_mac);
     int match = memcmp(encrypted_ghash, calc_mac, 0x10);
 
-    free(plaintext);
-
     return match == 0;
 }
 
-static void _fix_gcm_content(const u8 *ctr, u8 *ciphertext, u32 ciphertext_size, u64 device_id, u32 ks)
+static void _encrypt_gcm_block(u8 *block, u32 block_size, u8 *plaintext, u64 device_id)
 {
-    u8 *plaintext = ciphertext;
-    u32 plaintext_size = ciphertext_size;
-    u8 *encrypted_ghash = ciphertext + ciphertext_size;
-
-    se_aes_crypt_ctr(KEYSLOT_SWITCH_TEMPKEY, plaintext, plaintext_size, ciphertext, plaintext_size, ctr);
-
-    // u64 file_device_id = *(u64 *)(plaintext + plaintext_size - 0x8) & 0x00FFFFFFFFFFFFFFULL;
-    // gfx_hexdump(0, (const u8 *)&file_device_id, 0x08);
+    u8 *ctr = block;
+    u8 *ciphertext = block + 0x10;
+    u32 plaintext_size = block_size - 0x20;
+    u8 *encrypted_ghash = ciphertext + plaintext_size;
 
     // Replace device id
     write64be(plaintext, plaintext_size - 0x8, device_id);
@@ -197,11 +230,49 @@ static void _fix_gcm_content(const u8 *ctr, u8 *ciphertext, u32 ciphertext_size,
     se_aes_crypt_ctr(KEYSLOT_SWITCH_TEMPKEY, ciphertext, plaintext_size, plaintext, plaintext_size, ctr);
 }
 
-bool valid_extended_rsa_2048_eticket_key(u8 *prodinfo_buffer, u8 *master_key_0)
+static int _is_valid_gcm_content(const u8 *ctr, u8 *ciphertext, u32 ciphertext_size, u32 ks)
+{
+    u32 plaintext_size = ciphertext_size;
+    u8 *encrypted_ghash = ciphertext + ciphertext_size;
+
+    u8 *plaintext = malloc(plaintext_size);
+
+    se_aes_crypt_ctr(KEYSLOT_SWITCH_TEMPKEY, plaintext, plaintext_size, ciphertext, plaintext_size, ctr);
+    // gfx_hexdump(0, plaintext + plaintext_size - 0x10, 0x10);
+
+    uint8_t calc_mac[0x10];
+    ghash_calc(plaintext, plaintext_size, ctr, calc_mac);
+    int match = memcmp(encrypted_ghash, calc_mac, 0x10);
+
+    free(plaintext);
+
+    return match == 0;
+}
+
+void _prepare_eticket_key(u8 ks_dst, u8 *master_key)
 {
     u8 the_key[0x10] = {0};
-    unseal_key(eticket_rsa_kekek_source, eticket_rsa_kek_source, master_key_0, the_key, 3);
-    se_aes_key_set(KEYSLOT_SWITCH_TEMPKEY, the_key, 0x10);
+    unseal_key(eticket_rsa_kekek_source, eticket_rsa_kek_source, master_key, the_key, 3);
+    se_aes_key_set(ks_dst, the_key, 0x10);
+}
+
+void _prepare_device_key(u8 ks_dst, u8 *master_key)
+{
+    u8 the_key[0x10] = {0};
+    unseal_key(es_kek_source_x, es_kek_source_y, master_key, the_key, 1);
+    se_aes_key_set(ks_dst, the_key, 0x10);
+}
+
+void _prepare_gamecard_key(u8 ks_dst, u8 *master_key)
+{
+    u8 the_key[0x10] = {0};
+    unseal_key(lotus_kek_source_x, lotus_kek_source_y, master_key, the_key, 2);
+    se_aes_key_set(ks_dst, the_key, 0x10);
+}
+
+bool valid_extended_rsa_2048_eticket_key(u8 *prodinfo_buffer, u8 *master_key)
+{
+    _prepare_eticket_key(KEYSLOT_SWITCH_TEMPKEY, master_key);
 
     u8 *ctr = prodinfo_buffer + 0x3890;
     u8 *ciphertext = ctr + 0x10;
@@ -211,23 +282,9 @@ bool valid_extended_rsa_2048_eticket_key(u8 *prodinfo_buffer, u8 *master_key_0)
     return valid;
 }
 
-void write_extended_rsa_2048_eticket_key(u8 *prodinfo_buffer, u64 device_id, u8 *master_key_0)
+bool valid_extended_ecc_b233_device_key(u8 *prodinfo_buffer, u8 *master_key)
 {
-    u8 the_key[0x10] = {0};
-    unseal_key(eticket_rsa_kekek_source, eticket_rsa_kek_source, master_key_0, the_key, 3);
-    se_aes_key_set(KEYSLOT_SWITCH_TEMPKEY, the_key, 0x10);
-
-    u8 *ctr = prodinfo_buffer + 0x3890;
-    u8 *ciphertext = ctr + 0x10;
-
-    _fix_gcm_content(ctr, ciphertext, 0x220, device_id, KEYSLOT_SWITCH_TEMPKEY);
-}
-
-bool valid_extended_ecc_b233_device_key(u8 *prodinfo_buffer, u8 *master_key_0)
-{
-    u8 the_key[0x10] = {0};
-    unseal_key(es_kek_source, prod_kekek_source, master_key_0, the_key, 1);
-    se_aes_key_set(KEYSLOT_SWITCH_TEMPKEY, the_key, 0x10);
+    _prepare_device_key(KEYSLOT_SWITCH_TEMPKEY, master_key);
 
     u8 *ctr = prodinfo_buffer + 0x3770;
     u8 *ciphertext = ctr + 0x10;
@@ -237,23 +294,9 @@ bool valid_extended_ecc_b233_device_key(u8 *prodinfo_buffer, u8 *master_key_0)
     return valid;
 }
 
-void write_extended_ecc_b233_device_key(u8 *prodinfo_buffer, u64 device_id, u8 *master_key_0)
+bool valid_extended_gamecard_key(u8 *prodinfo_buffer, u8 *master_key)
 {
-    u8 the_key[0x10] = {0};
-    unseal_key(es_kek_source, prod_kekek_source, master_key_0, the_key, 1);
-    se_aes_key_set(KEYSLOT_SWITCH_TEMPKEY, the_key, 0x10);
-
-    u8 *ctr = prodinfo_buffer + 0x3770;
-    u8 *ciphertext = ctr + 0x10;
-
-    _fix_gcm_content(ctr, ciphertext, 0x30, device_id, KEYSLOT_SWITCH_TEMPKEY);
-}
-
-bool valid_extended_gamecard_key(u8 *prodinfo_buffer, u8 *master_key_0)
-{
-    u8 the_key[0x10] = {0};
-    unseal_key(lotus_kekek_source, lotus_kek_source, master_key_0, the_key, 2);
-    se_aes_key_set(KEYSLOT_SWITCH_TEMPKEY, the_key, 0x10);
+    _prepare_gamecard_key(KEYSLOT_SWITCH_TEMPKEY, master_key);
 
     u8 *ctr = prodinfo_buffer + 0x3C20;
     u8 *ciphertext = ctr + 0x10;
@@ -261,18 +304,6 @@ bool valid_extended_gamecard_key(u8 *prodinfo_buffer, u8 *master_key_0)
     int valid = _is_valid_gcm_content(ctr, ciphertext, 0x110, KEYSLOT_SWITCH_TEMPKEY);
 
     return valid;
-}
-
-void write_extended_gamecard_key(u8 *prodinfo_buffer, u64 device_id, u8 *master_key_0)
-{
-    u8 the_key[0x10] = {0};
-    unseal_key(lotus_kekek_source, lotus_kek_source, master_key_0, the_key, 2);
-    se_aes_key_set(KEYSLOT_SWITCH_TEMPKEY, the_key, 0x10);
-
-    u8 *ctr = prodinfo_buffer + 0x3C20;
-    u8 *ciphertext = ctr + 0x10;
-
-    _fix_gcm_content(ctr, ciphertext, 0x110, device_id, KEYSLOT_SWITCH_TEMPKEY);
 }
 
 bool valid_ecc_b233_device_certificate(u8 *prodinfo_buffer)
@@ -353,23 +384,14 @@ void write_ssl_certificate(u8 *prodinfo_buffer)
 
 void write_random_number(u8 *prodinfo_buffer, u64 device_id)
 {
-    memset(prodinfo_buffer + 0x1300, 0, 0x1000);
+    memset(prodinfo_buffer + OFFSET_OF_BLOCK(RandomNumber), 0, SIZE_OF_BLOCK(RandomNumber) - 0x20);
     u64 key[2] = {device_id, device_id};
     u8 ctr[0x10] = {0};
 
     se_aes_key_set(KEYSLOT_SWITCH_TEMPKEY, key, 0x10);
-    se_aes_crypt_ctr(KEYSLOT_SWITCH_TEMPKEY, prodinfo_buffer + 0x1300, 0x1000, prodinfo_buffer + 0x1300, 0x1000, ctr);
-}
-
-void write_eticket_certificate(u8 *prodinfo_buffer, const char *device_id_string)
-{
-    prodinfo_buffer[OFFSET_OF_BLOCK(Rsa2048ETicketCertificate) + 0xC4] = 'N';
-    prodinfo_buffer[OFFSET_OF_BLOCK(Rsa2048ETicketCertificate) + 0xC5] = 'X';
-
-    memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(Rsa2048ETicketCertificate) + 0xC6, device_id_string, 0x10);
-
-    prodinfo_buffer[OFFSET_OF_BLOCK(Rsa2048ETicketCertificate) + 0xD6] = '-';
-    prodinfo_buffer[OFFSET_OF_BLOCK(Rsa2048ETicketCertificate) + 0xD7] = '0';
+    se_aes_crypt_ctr(KEYSLOT_SWITCH_TEMPKEY,
+                     prodinfo_buffer + OFFSET_OF_BLOCK(RandomNumber), SIZE_OF_BLOCK(RandomNumber) - 0x20,
+                     prodinfo_buffer + OFFSET_OF_BLOCK(RandomNumber), SIZE_OF_BLOCK(RandomNumber) - 0x20, ctr);
 }
 
 void write_config_id(u8 *prodinfo_buffer)
@@ -415,6 +437,7 @@ void write_battery_lot(u8 *prodinfo_buffer)
 
 void write_speaker_calibration_value(u8 *prodinfo_buffer)
 {
+    // Seems constant for all Switch models.
     unsigned char speaker_calibration_value[80] = {
         0x00, 0x03, 0x00, 0x5A, 0xED, 0x87, 0x00, 0x00, 0xC1, 0x61, 0x1E, 0xAF,
         0x09, 0x5B, 0xC9, 0x60, 0x18, 0x8D, 0x00, 0x00, 0xDE, 0x2A, 0x0F, 0xDB,
@@ -430,17 +453,14 @@ void write_speaker_calibration_value(u8 *prodinfo_buffer)
 void write_short_values(u8 *prodinfo_buffer)
 {
     prodinfo_buffer[OFFSET_OF_BLOCK(RegionCode)] = 1;
-    prodinfo_buffer[OFFSET_OF_BLOCK(ProductModel)] = 1;
+    prodinfo_buffer[OFFSET_OF_BLOCK(ProductModel)] = fuse_read_hw_type() + 1;
 
     unsigned char brightness_mapping[12] = {
         0x00, 0x00, 0x80, 0x3F, 0x00, 0x00, 0x00, 0x00, 0x0A, 0xD7, 0xA3, 0x3C};
-
     memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(LcdBacklightBrightnessMapping), brightness_mapping, sizeof(brightness_mapping));
 
-    unsigned char lcd_vendor_id[3] = {
-        0x0F, 0x94, 0x30};
-
-    memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(LcdVendorId), lcd_vendor_id, sizeof(lcd_vendor_id));
+    u32 display_id = __builtin_bswap32(nyx_str->info.disp_id);
+    memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(LcdVendorId), (u8*)&display_id + 1, 3); // Skip leading 00.
 }
 
 void write_all_crc(u8 *prodinfo_buffer, u32 prodinfo_size)
@@ -459,12 +479,77 @@ void write_all_crc(u8 *prodinfo_buffer, u32 prodinfo_size)
 void write_all_sha256(u8 *prodinfo_buffer)
 {
     // RandomNumber
-    se_calc_sha256_oneshot(prodinfo_buffer + 0x2300, prodinfo_buffer + 0x1300, 0x1000);
+    se_calc_sha256_oneshot(prodinfo_buffer + 0x2300, prodinfo_buffer + OFFSET_OF_BLOCK(RandomNumber), SIZE_OF_BLOCK(RandomNumber) - 0x20);
 
     // GameCardCertificate
-    se_calc_sha256_oneshot(prodinfo_buffer + 0x2840, prodinfo_buffer + 0x2440, 0x400);
+    se_calc_sha256_oneshot(prodinfo_buffer + 0x2840, prodinfo_buffer + OFFSET_OF_BLOCK(GameCardCertificate), SIZE_OF_BLOCK(GameCardCertificate) - 0x20);
 
     // SslCertificate
     u32 ssl_certificate_size = *(u32 *)(prodinfo_buffer + OFFSET_OF_BLOCK(SslCertificateSize));
     se_calc_sha256_oneshot(prodinfo_buffer + 0x12E0, prodinfo_buffer + 0x0AE0, ssl_certificate_size);
+}
+
+void import_device_certificate(u8 *donor_prodinfo_buffer, u8 *prodinfo_buffer)
+{
+    memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(EccB233DeviceCertificate), donor_prodinfo_buffer + OFFSET_OF_BLOCK(EccB233DeviceCertificate), SIZE_OF_BLOCK(EccB233DeviceCertificate));
+}
+
+void import_eticket_certificate(u8 *donor_prodinfo_buffer, u8 *prodinfo_buffer)
+{
+    memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(Rsa2048ETicketCertificate), donor_prodinfo_buffer + OFFSET_OF_BLOCK(Rsa2048ETicketCertificate), SIZE_OF_BLOCK(Rsa2048ETicketCertificate));
+}
+
+void import_gamecard_certificate(u8 *donor_prodinfo_buffer, u8 *prodinfo_buffer)
+{
+    memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(GameCardCertificate), donor_prodinfo_buffer + OFFSET_OF_BLOCK(GameCardCertificate), SIZE_OF_BLOCK(GameCardCertificate));
+}
+
+void import_amiiboo_certificates(u8 *donor_prodinfo_buffer, u8 *prodinfo_buffer)
+{
+    memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(AmiiboEcqvCertificate), donor_prodinfo_buffer + OFFSET_OF_BLOCK(AmiiboEcqvCertificate),
+           SIZE_OF_BLOCK(AmiiboEcqvCertificate) +
+               SIZE_OF_BLOCK(AmiiboEcdsaCertificate));
+
+    memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(AmiiboEcqvBlsCertificate), donor_prodinfo_buffer + OFFSET_OF_BLOCK(AmiiboEcqvBlsCertificate),
+           SIZE_OF_BLOCK(AmiiboEcqvBlsCertificate) +
+               SIZE_OF_BLOCK(AmiiboEcqvBlsRootCertificate));
+}
+
+bool decrypt_extended_device_key(u8 *donor_prodinfo_buffer, u8 extended_device_key[0x30], u8 *master_key)
+{
+    _prepare_device_key(KEYSLOT_SWITCH_TEMPKEY, master_key);
+    return _decrypt_gcm_block(donor_prodinfo_buffer + OFFSET_OF_BLOCK(ExtendedEccB233DeviceKey), 0x50, extended_device_key);
+}
+
+void encrypt_extended_device_key(u8 *prodinfo_buffer, u8 extended_device_key[0x30], u64 device_id, u8 *master_key)
+{
+    _prepare_device_key(KEYSLOT_SWITCH_TEMPKEY, master_key);
+    _encrypt_gcm_block(prodinfo_buffer + OFFSET_OF_BLOCK(ExtendedEccB233DeviceKey), 0x50,
+                       extended_device_key, device_id);
+}
+
+bool decrypt_extended_eticket_key(u8 *donor_prodinfo_buffer, u8 extended_eticket_key[0x220], u8 *master_key)
+{
+    _prepare_eticket_key(KEYSLOT_SWITCH_TEMPKEY, master_key);
+    return _decrypt_gcm_block(donor_prodinfo_buffer + OFFSET_OF_BLOCK(ExtendedRsa2048ETicketKey), 0x240, extended_eticket_key);
+}
+
+void encrypt_extended_eticket_key(u8 *prodinfo_buffer, u8 extended_eticket_key[0x220], u64 device_id, u8 *master_key)
+{
+    _prepare_eticket_key(KEYSLOT_SWITCH_TEMPKEY, master_key);
+    _encrypt_gcm_block(prodinfo_buffer + OFFSET_OF_BLOCK(ExtendedRsa2048ETicketKey), 0x240,
+                       extended_eticket_key, device_id);
+}
+
+bool decrypt_extended_gamecard_key(u8 *donor_prodinfo_buffer, u8 extended_gamecard_key[0x110], u8 *master_key)
+{
+    _prepare_gamecard_key(KEYSLOT_SWITCH_TEMPKEY, master_key);
+    return _decrypt_gcm_block(donor_prodinfo_buffer + OFFSET_OF_BLOCK(ExtendedGameCardKey), 0x130, extended_gamecard_key);
+}
+
+void encrypt_extended_gamecard_key(u8 *prodinfo_buffer, u8 extended_gamecard_key[0x110], u64 device_id, u8 *master_key)
+{
+    _prepare_gamecard_key(KEYSLOT_SWITCH_TEMPKEY, master_key);
+    _encrypt_gcm_block(prodinfo_buffer + OFFSET_OF_BLOCK(ExtendedGameCardKey), 0x130,
+                       extended_gamecard_key, device_id);
 }

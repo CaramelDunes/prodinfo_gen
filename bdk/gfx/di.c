@@ -351,7 +351,7 @@ void display_init()
 	_display_dsi_wait(150000, _DSIREG(DSI_HOST_CONTROL), DSI_HOST_CONTROL_IMM_BTA);
 
 	// Wait a bit for the reply.
-	usleep(5000);
+	usleep(50000);
 
 	// MIPI_DCS_GET_DISPLAY_ID reply is a long read, size 3 x u32.
 	for (u32 i = 0; i < 3; i++)
