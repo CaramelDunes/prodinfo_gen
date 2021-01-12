@@ -89,7 +89,7 @@ bool valid_prodinfo_checksums(u8 *prodinfo_buffer, u32 prodinfo_size)
     return prodinfo_size >= prodinfo_min_size &&
            prodinfo_size <= prodinfo_max_size &&
            valid_cal0_signature(prodinfo_buffer, prodinfo_size) &&
-           valid_crcs(prodinfo_buffer, prodinfo_size) &&
+           valid_base_crcs(prodinfo_buffer, prodinfo_size) &&
            valid_body_checksum(prodinfo_buffer, prodinfo_size) &&
            valid_sha256_blocks(prodinfo_buffer, prodinfo_size);
 }
@@ -101,16 +101,16 @@ bool valid_own_prodinfo(u8 *prodinfo_buffer, u32 prodinfo_size, u8 *master_key)
            valid_extended_ecc_b233_device_key(prodinfo_buffer, master_key);
 }
 
-bool valid_crcs(u8 *prodinfo_buffer, u32 prodinfo_size)
+bool valid_base_crcs(u8 *prodinfo_buffer, u32 prodinfo_size)
 {
-    int num_crc_blocks = sizeof(crc_blocks) / sizeof(crc_block_t);
+    int num_crc_blocks = sizeof(base_crc_blocks) / sizeof(crc_block_t);
 
     for (int i = 0; i < num_crc_blocks; i++)
     {
-        if (crc_blocks[i].offset > prodinfo_size)
+        if (base_crc_blocks[i].offset > prodinfo_size)
             continue;
 
-        if (!has_valid_crc16(prodinfo_buffer, crc_blocks[i].offset, crc_blocks[i].size))
+        if (!has_valid_crc16(prodinfo_buffer, base_crc_blocks[i].offset, base_crc_blocks[i].size))
             return false;
     }
 
@@ -417,6 +417,9 @@ void write_header(u8 *prodinfo_buffer)
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x71, 0x0E};
 
     memcpy(prodinfo_buffer, header, sizeof(header));
+
+    u32 size = 0x7FC0;
+    memcpy(prodinfo_buffer + 0x8, &size, 4);
 }
 
 void write_sensors_offset_scale(u8 *prodinfo_buffer)
@@ -460,19 +463,54 @@ void write_short_values(u8 *prodinfo_buffer)
     memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(LcdBacklightBrightnessMapping), brightness_mapping, sizeof(brightness_mapping));
 
     u32 display_id = __builtin_bswap32(nyx_str->info.disp_id);
-    memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(LcdVendorId), (u8*)&display_id + 1, 3); // Skip leading 00.
+    memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(LcdVendorId), (u8 *)&display_id + 1, 3); // Skip leading 00.
+
+    // prodinfo_buffer[OFFSET_OF_BLOCK(UsbTypeCPowerSourceCircuitVersion)] = 1;
+    // prodinfo_buffer[OFFSET_OF_BLOCK(TouchIcVendorId)] = 1;
+}
+
+void write_console_colors(u8 *prodinfo_buffer, u64 device_id)
+{
+    u8 *device_id_bytes = (u8 *)&device_id;
+
+    prodinfo_buffer[OFFSET_OF_BLOCK(ColorVariation)] = 1;
+
+    // Those colors can be seen in the Controllers screen.
+    u8 sub_color[4] = {0x0, 0xFF, 0x00, 0xFF}; // Unused?
+
+    u8 bezel_color[4] = {device_id_bytes[0], device_id_bytes[1], device_id_bytes[2], 0xFF};  // Round bezel
+    u8 main_color_1[4] = {device_id_bytes[3], device_id_bytes[4], device_id_bytes[5], 0xFF}; // Border
+
+    u8 main_color_2[4] = {0xFF, 0x00, 0xFF, 0xFF}; // Unused or depending on ColorVariation?
+    u8 main_color_3[4] = {0xFF, 0xFF, 0x00, 0xFF}; // Unused or depending on ColorVariation?
+
+    memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(HousingSubColor), sub_color, 4);
+    memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(HousingBezelColor), bezel_color, 4);
+    memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(HousingMainColor1), main_color_1, 4);
+    memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(HousingMainColor2), main_color_2, 4);
+    memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(HousingMainColor3), main_color_3, 4);
 }
 
 void write_all_crc(u8 *prodinfo_buffer, u32 prodinfo_size)
 {
-    int num_crc_blocks = sizeof(crc_blocks) / sizeof(crc_block_t);
+    int num_crc_blocks = sizeof(base_crc_blocks) / sizeof(crc_block_t);
 
     for (int i = 0; i < num_crc_blocks; i++)
     {
-        if (crc_blocks[i].offset > prodinfo_size)
+        if (base_crc_blocks[i].offset > prodinfo_size)
             continue;
 
-        write_crc16(prodinfo_buffer, crc_blocks[i].offset, crc_blocks[i].size);
+        write_crc16(prodinfo_buffer, base_crc_blocks[i].offset, base_crc_blocks[i].size);
+    }
+
+    num_crc_blocks = sizeof(bonus_crc_blocks) / sizeof(crc_block_t);
+
+    for (int i = 0; i < num_crc_blocks; i++)
+    {
+        if (bonus_crc_blocks[i].offset > prodinfo_size)
+            continue;
+
+        write_crc16(prodinfo_buffer, bonus_crc_blocks[i].offset, bonus_crc_blocks[i].size);
     }
 }
 

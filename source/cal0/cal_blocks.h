@@ -67,9 +67,9 @@ CRC_BLOCK(AmiiboEcqvBlsKey, 0x3620, 0x50);
 CRC_BLOCK(AmiiboEcqvBlsCertificate, 0x3670, 0x30);
 CRC_BLOCK(AmiiboEcqvBlsRootCertificate, 0x36A0, 0xA0);
 
-CRC_BLOCK(ProductModel, 0x3740, 0x10);                     // DEFAULT Nx = 1
-CRC_BLOCK(HomeMenuSchemeMainColorVariation, 0x3750, 0x10); // DEFAULT 0
-CRC_BLOCK(LcdBacklightBrightnessMapping, 0x3760, 0x10);    // DEFAULT 00 00 80 3F 00 00 00 00 0A D7 A3 3C
+CRC_BLOCK(ProductModel, 0x3740, 0x10);                  // DEFAULT Nx = 1
+CRC_BLOCK(ColorVariation, 0x3750, 0x10);                // DEFAULT 0
+CRC_BLOCK(LcdBacklightBrightnessMapping, 0x3760, 0x10); // DEFAULT 00 00 80 3F 00 00 00 00 0A D7 A3 3C
 
 CRC_BLOCK(ExtendedEccB233DeviceKey, 0x3770, 0x60);
 CRC_BLOCK(ExtendedEccP256ETicketKey, 0x37D0, 0x60); // EMPTY
@@ -106,7 +106,7 @@ CRC_BLOCK(TouchIcVendorId, 0x4320, 0x10);
 CRC_BLOCK(ColorModel, 0x4330, 0x10);
 CRC_BLOCK(ConsoleSixAxisSensorMountType, 0x4340, 0x10);
 
-static const crc_block_t crc_blocks[] = {
+static const crc_block_t base_crc_blocks[] = {
     BLOCK_OF(ConfigurationId1), // DEFAULT MP_00_01_00_00
 
     BLOCK_OF(WlanCountryCodes), // DEFAULT
@@ -152,7 +152,7 @@ static const crc_block_t crc_blocks[] = {
     BLOCK_OF(AmiiboEcqvBlsRootCertificate),
 
     BLOCK_OF(ProductModel),
-    BLOCK_OF(HomeMenuSchemeMainColorVariation),
+    BLOCK_OF(ColorVariation),
     BLOCK_OF(LcdBacklightBrightnessMapping),
 
     BLOCK_OF(ExtendedEccB233DeviceKey),
@@ -162,6 +162,38 @@ static const crc_block_t crc_blocks[] = {
     BLOCK_OF(ExtendedSslKey),
     BLOCK_OF(ExtendedGameCardKey),
     BLOCK_OF(LcdVendorId)};
+
+static const crc_block_t bonus_crc_blocks[] = {
+    // If the CRC values of these are valid, HOS will try to use them and may hang.
+    // BLOCK_OF(ExtendedRsa2048DeviceKey),
+    // BLOCK_OF(Rsa2048DeviceCertificate),
+
+    // BLOCK_OF(UsbTypeCPowerSourceCircuitVersion),
+
+    BLOCK_OF(HousingSubColor),
+    BLOCK_OF(HousingBezelColor),
+    BLOCK_OF(HousingMainColor1),
+    BLOCK_OF(HousingMainColor2),
+    BLOCK_OF(HousingMainColor3),
+
+    // BLOCK_OF(AnalogStickModuleTypeL),
+    // BLOCK_OF(AnalogStickModelParameterL),
+    // BLOCK_OF(AnalogStickFactoryCalibrationL),
+
+    // BLOCK_OF(AnalogStickModuleTypeR),
+    // BLOCK_OF(AnalogStickModelParameterR),
+    // BLOCK_OF(AnalogStickFactoryCalibrationR),
+
+    // BLOCK_OF(ConsoleSixAxisSensorModuleType),
+    // BLOCK_OF(ConsoleSixAxisSensorHorizontalOffset),
+
+    // BLOCK_OF(BatteryVersion),
+    // BLOCK_OF(TouchIcVendorId),
+
+    BLOCK_OF(ColorModel)
+
+    // BLOCK_OF(ConsoleSixAxisSensorMountType)
+};
 
 SHA256_BLOCK(SslCertificate, 0x0AE0, 0x820); // WARNING, ONLY USE Size bytes to compute hash
 SHA256_BLOCK(RandomNumber, 0x1300, 0x1020);

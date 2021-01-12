@@ -112,8 +112,11 @@ void build_cal0_scratch()
     gfx_printf("%kWriting battery lot\n", colors[(color_idx++) % 6]);
     write_battery_lot(prodinfo_buffer);
 
-    gfx_printf("%kWriting speaker calibration data\n\n", colors[(color_idx++) % 6]);
+    gfx_printf("%kWriting speaker calibration data\n", colors[(color_idx++) % 6]);
     write_speaker_calibration_value(prodinfo_buffer);
+
+    gfx_printf("%kWriting your very own console colors\n\n", colors[(color_idx++) % 6]);
+    write_console_colors(prodinfo_buffer, device_id_int);
 
     write_short_values(prodinfo_buffer);
 
