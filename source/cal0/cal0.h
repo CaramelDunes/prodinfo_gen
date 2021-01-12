@@ -19,6 +19,7 @@ void write_serial_number(u8 *prodinfo_buffer);
 void write_battery_lot(u8 *prodinfo_buffer);
 void write_speaker_calibration_value(u8 *prodinfo_buffer);
 void write_short_values(u8 *prodinfo_buffer);
+void write_console_colors(u8 *prodinfo_buffer, u64 device_id);
 
 void write_all_crc(u8 *prodinfo_buffer, u32 prodinfo_size);
 void write_all_sha256(u8 *prodinfo_buffer);
@@ -28,7 +29,7 @@ void write_body_checksum(u8 *prodinfo_buffer);
 bool valid_prodinfo_checksums(u8 *prodinfo_buffer, u32 prodinfo_size);
 bool valid_own_prodinfo(u8 *prodinfo_buffer, u32 prodinfo_size, u8 *master_key);
 
-bool valid_crcs(u8 *prodinfo_buffer, u32 prodinfo_size);
+bool valid_base_crcs(u8 *prodinfo_buffer, u32 prodinfo_size);
 bool valid_extended_rsa_2048_eticket_key(u8 *prodinfo_buffer, u8 *master_key);
 bool valid_extended_ecc_b233_device_key(u8 *prodinfo_buffer, u8 *master_key);
 bool valid_ecc_b233_device_certificate(u8 *prodinfo_buffer);
