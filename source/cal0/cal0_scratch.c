@@ -75,7 +75,9 @@ void build_cal0_scratch()
     u32 begin_time = get_tmr_us();
 
     u64 device_id_int = fuse_get_device_id();
-    device_id_int |= 0x6300000000000000ULL;
+
+    // First nibble is always 6 but second one ranges from 0 to 3.
+    device_id_int |= 0x6000000000000000ULL;
 
     char device_id_as_string[0x11] = {0};
     device_id_string(device_id_as_string);
