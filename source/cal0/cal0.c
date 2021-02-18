@@ -456,7 +456,8 @@ void write_speaker_calibration_value(u8 *prodinfo_buffer)
 void write_short_values(u8 *prodinfo_buffer)
 {
     prodinfo_buffer[OFFSET_OF_BLOCK(RegionCode)] = 1;
-    switch(fuse_read_hw_type())
+
+    switch (fuse_read_hw_type())
     {
     case FUSE_NX_HW_TYPE_ICOSA:
         prodinfo_buffer[OFFSET_OF_BLOCK(ProductModel)] = 1;
