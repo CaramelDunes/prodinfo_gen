@@ -456,7 +456,21 @@ void write_speaker_calibration_value(u8 *prodinfo_buffer)
 void write_short_values(u8 *prodinfo_buffer)
 {
     prodinfo_buffer[OFFSET_OF_BLOCK(RegionCode)] = 1;
-    prodinfo_buffer[OFFSET_OF_BLOCK(ProductModel)] = fuse_read_hw_type() + 1;
+    switch(fuse_read_hw_type())
+    {
+    case FUSE_NX_HW_TYPE_ICOSA:
+        prodinfo_buffer[OFFSET_OF_BLOCK(ProductModel)] = 1;
+        break;
+    case FUSE_NX_HW_TYPE_IOWA:
+        prodinfo_buffer[OFFSET_OF_BLOCK(ProductModel)] = 3;
+        break;
+    case FUSE_NX_HW_TYPE_HOAG:
+        prodinfo_buffer[OFFSET_OF_BLOCK(ProductModel)] = 4;
+        break;
+    default:
+        prodinfo_buffer[OFFSET_OF_BLOCK(ProductModel)] = 1;
+        break;
+    }
 
     unsigned char brightness_mapping[12] = {
         0x00, 0x00, 0x80, 0x3F, 0x00, 0x00, 0x00, 0x00, 0x0A, 0xD7, 0xA3, 0x3C};
