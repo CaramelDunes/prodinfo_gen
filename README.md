@@ -1,6 +1,6 @@
 prodinfo_gen [![Build Status](https://api.cirrus-ci.com/github/CaramelDunes/prodinfo_gen.svg)](https://cirrus-ci.com/github/CaramelDunes/prodinfo_gen)
 ============
-prodinfo_gen is a Nintendo Switch payload that can generate barely-working, console-unique, PRODINFO files.
+prodinfo_gen is a Nintendo Switch payload that can generate minimal, console-unique, PRODINFO files.
 
 It can either generate one from scratch or import parts of a donor PRODINFO.
 
@@ -13,25 +13,14 @@ Limitations
 
 Of course, as we do not have Nintendo's private keys, the generated files can't be perfect.
 
-What *should* work with a **"from scratch"** PRODINFO:
- - Booting
- - Launching homebrews
+Here's what works:
 
-What *won't* work with a **"from scratch"** PRODINFO:
- - Communicating with Nintendo's servers
- - GameCards
- - Amiibos (not tested)
+|              | Booting | Homebrews | Amiibos | GameCards | Online |
+| ------------ | :-----: | :-------: | :-----: | :-------: | :----: |
+| from scratch | ✓ | ✓ | ✓ | | |
+| from donor   | ✓ | ✓ | ✓ | ✓ | |
 
-What *should* work with a **"from donor"** PRODINFO:
- - Booting
- - Launching homebrews
- - GameCards
- - Amiibos (not tested)
-
-What *won't* work with a **"from donor"** PRODINFO:
- - Communicating with Nintendo's servers
-
- As such, a *"from scratch"* PRODINFO also acts as a more elaborate "Incognito". 
+As such, a **"from scratch"** PRODINFO also acts as a more elaborate "Incognito". 
 
 **USE THIS TOOL AT YOUR OWN RISK, DO NOT OVERWRITE A FACTORY PRODINFO WITHOUT MAKING A BACKUP FIRST.**
 
