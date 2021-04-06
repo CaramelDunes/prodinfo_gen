@@ -303,13 +303,15 @@ void _get_key_generations(char *sysnand_label, char *emunand_label)
 	sdmmc_storage_end(&storage);
 
 	u32 pk1_offset = h_cfg.t210b01 ? sizeof(bl_hdr_t210b01_t) : 0; // Skip T210B01 OEM header.
-    const pkg1_id_t *pkg1_id = pkg1_identify(pkg1 + pk1_offset);
-	sprintf(sysnand_label + 36, "% 3d", pkg1_id->kb);
-	ment_top[0].caption = sysnand_label;
-	if (h_cfg.emummc_force_disable)
-	{
-		free(pkg1);
-		return;
+	const pkg1_id_t *pkg1_id = pkg1_identify(pkg1 + pk1_offset);
+	if (pkg1_id) {
+		sprintf(sysnand_label + 36, "% 3d", pkg1_id->kb);
+		ment_top[0].caption = sysnand_label;
+		if (h_cfg.emummc_force_disable)
+		{
+			free(pkg1);
+			return;
+		}
 	}
 
 	emummc_storage_init_mmc(&storage, &sdmmc);
@@ -319,9 +321,11 @@ void _get_key_generations(char *sysnand_label, char *emunand_label)
 	emummc_storage_end(&storage);
 
 	pkg1_id = pkg1_identify(pkg1 + pk1_offset);
-	sprintf(emunand_label + 36, "% 3d", pkg1_id->kb);
-	free(pkg1);
-	ment_top[1].caption = emunand_label;
+	if (pkg1_id) {
+		sprintf(emunand_label + 36, "% 3d", pkg1_id->kb);
+		free(pkg1);
+		ment_top[1].caption = emunand_label;
+	}
 }
 
 extern void pivot_stack(u32 stack_top);
