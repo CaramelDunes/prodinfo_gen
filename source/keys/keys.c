@@ -202,7 +202,7 @@ static bool _derive_tsec_keys(tsec_ctxt_t *tsec_ctxt, u32 kb, key_derivation_ctx
     int res = 0;
     u32 retries = 0;
 
-    mc_disable_ahb_redirect();
+    // mc_disable_ahb_redirect();
 
     while (tsec_query(keys->tsec_keys, kb, tsec_ctxt) < 0) {
         memset(keys->tsec_keys, 0, sizeof(keys->tsec_keys));
@@ -213,7 +213,7 @@ static bool _derive_tsec_keys(tsec_ctxt_t *tsec_ctxt, u32 kb, key_derivation_ctx
         }
     }
 
-    mc_enable_ahb_redirect();
+    // mc_enable_ahb_redirect();
 
     if (res < 0) {
         EPRINTFARGS("ERROR %x dumping TSEC.\n", res);

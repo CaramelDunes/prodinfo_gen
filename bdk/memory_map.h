@@ -19,10 +19,10 @@
 
 //#define IPL_STACK_TOP  0x4003FF00
 /* --- BIT/BCT: 0x40000000 - 0x40003000 --- */
-/* ---     IPL: 0x40003000 - 0x40028000 --- */
+/* ---     IPL: 0x40008000 - 0x40028000 --- */
 #define LDR_LOAD_ADDR     0x40007000
 
-#define IPL_LOAD_ADDR     0x40003000
+#define IPL_LOAD_ADDR     0x40008000
 #define  IPL_SZ_MAX          0x20000 // 128KB.
 
 /* --- XUSB EP context and TRB ring buffers --- */

@@ -1,4 +1,9 @@
+.vs
 .vscode
-build
-output
-research
+build/*
+output/*
+research/*
+loader/payload_00.h
+loader/payload_01.h
+tools/bin2c/bin2c
+tools/lz/lz77

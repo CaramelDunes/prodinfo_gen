@@ -20,7 +20,7 @@
 #include <soc/clock.h>
 #include <utils/util.h>
 
-#define CONFIG_ENABLE_AHB_REDIRECT
+//#define CONFIG_ENABLE_AHB_REDIRECT
 
 void mc_config_tsec_carveout(u32 bom, u32 size1mb, bool lock)
 {
