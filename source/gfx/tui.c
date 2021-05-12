@@ -86,7 +86,7 @@ void tui_pbar(int x, int y, u32 val, u32 fgcol, u32 bgcol)
 	gfx_con_setpos(cx, cy);
 
 	// Update status bar.
-	// tui_sbar(false);
+	tui_sbar(false);
 }
 
 void *tui_do_menu(menu_t *menu)
@@ -94,7 +94,7 @@ void *tui_do_menu(menu_t *menu)
 	int idx = 0, prev_idx = 0, cnt = 0x7FFFFFFF;
 
 	gfx_clear_partial_grey(0x1B, 0, 1256);
-	// tui_sbar(true);
+	tui_sbar(true);
 
 	while (true)
 	{
@@ -203,7 +203,7 @@ void *tui_do_menu(menu_t *menu)
 			gfx_con.fntsz = 16;
 			gfx_clear_partial_grey(0x1B, 0, 1256);
 		}
-		// tui_sbar(false);
+		tui_sbar(false);
 	}
 
 	return NULL;
