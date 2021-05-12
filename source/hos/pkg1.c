@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2018 naehrwert
  * Copyright (c) 2018 st4rk
- * Copyright (c) 2018-2019 CTCaer
+ * Copyright (c) 2018-2021 CTCaer
  * Copyright (c) 2018 balika011
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -46,7 +46,7 @@ static const pkg1_id_t _pkg1_ids[] = {
 
 const pkg1_id_t *pkg1_identify(u8 *pkg1)
 {
-	for (u32 i = 0; _pkg1_ids[i].id; i++)
+	for (u32 i = 0; i < ARRAY_SIZE(_pkg1_ids); i++)
 		if (!memcmp(pkg1 + 0x10, _pkg1_ids[i].id, 8))
 			return &_pkg1_ids[i];
 	return NULL;

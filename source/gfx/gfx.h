@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2018 naehrwert
- * Copyright (c) 2018-2020 CTCaer
+ * Copyright (c) 2018-2021 CTCaer
+ * Copyright (c) 2019-2021 shchmue
  * Copyright (c) 2018 M4xw
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -63,8 +64,8 @@ void gfx_con_setpos(u32 x, u32 y);
 void gfx_putc(char c);
 void gfx_puts(const char *s);
 void gfx_printf(const char *fmt, ...);
-void gfx_hexdump(u32 base, const u8 *buf, u32 len);
-void gfx_hexdiff(u32 base, const u8 *buf1, const u8 *buf2, u32 len);
+void gfx_hexdump(u32 base, const void *buf, u32 len);
+void gfx_hexdiff(u32 base, const void *buf1, const void *buf2, u32 len);
 
 void gfx_set_pixel(u32 x, u32 y, u32 color);
 void gfx_line(int x0, int y0, int x1, int y1, u32 color);

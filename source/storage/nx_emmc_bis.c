@@ -23,6 +23,7 @@
 
 #include <mem/heap.h>
 #include <sec/se.h>
+#include <sec/se_t210.h>
 #include "../storage/nx_emmc.h"
 #include "nx_emmc_bis.h"
 #include <storage/sdmmc.h>
@@ -32,7 +33,7 @@
 #define CLUSTER_LOOKUP_EMPTY_ENTRY 0xFFFFFFFF
 #define SECTORS_PER_CLUSTER 0x20
 
-typedef struct
+typedef struct _cluster_cache_t
 {
 	u32 cluster_num;                // index of the cluster in the partition
 	u32 visit_count;                // used for debugging/access analysis
@@ -41,7 +42,7 @@ typedef struct
 	u8  cluster[XTS_CLUSTER_SIZE];  // the cached cluster itself
 } cluster_cache_t;
 
-typedef struct
+typedef struct _bis_cache_t
 {
 	u8 emmc_buffer[XTS_CLUSTER_SIZE];
 	cluster_cache_t cluster_cache[];
@@ -313,8 +314,8 @@ void nx_emmc_bis_cluster_cache_init()
 		free(cluster_lookup_buf);
 
 	// Check if carveout protected, in case of old hwinit (pre 4.0.0) chainload.
-	*(vu32 *)NX_BIS_LOOKUP_ADR = 0;
-	if (*(vu32 *)NX_BIS_LOOKUP_ADR != 0)
+	*(vu32 *)NX_BIS_LOOKUP_ADDR = 0;
+	if (*(vu32 *)NX_BIS_LOOKUP_ADDR != 0)
 	{
 		cluster_lookup_buf = (u32 *)malloc(cluster_lookup_size + 0x2000);
 		cluster_lookup = (u32 *)ALIGN((u32)cluster_lookup_buf, 0x1000);
@@ -322,7 +323,7 @@ void nx_emmc_bis_cluster_cache_init()
 	else
 	{
 		cluster_lookup_buf = NULL;
-		cluster_lookup = (u32 *)NX_BIS_LOOKUP_ADR;
+		cluster_lookup = (u32 *)NX_BIS_LOOKUP_ADDR;
 	}
 
 	// Clear cluster lookup table and reset end index.

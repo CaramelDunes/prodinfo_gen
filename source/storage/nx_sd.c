@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018 naehrwert
- * Copyright (c) 2018-2019 CTCaer
+ * Copyright (c) 2018-2021 CTCaer
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -57,6 +57,11 @@ bool sd_get_card_removed()
 		return true;
 
 	return false;
+}
+
+bool sd_get_card_mounted()
+{
+	return sd_mounted;
 }
 
 u32 sd_get_mode()
@@ -179,6 +184,11 @@ static void _sd_deinit()
 
 void sd_unmount() { _sd_deinit(); }
 void sd_end()     { _sd_deinit(); }
+
+bool sd_is_gpt()
+{
+	return sd_fs.part_type;
+}
 
 void *sd_file_read(const char *path, u32 *fsize)
 {

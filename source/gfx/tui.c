@@ -15,7 +15,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <gfx/di.h>
+#include <display/di.h>
 #include "tui.h"
 #include "../config.h"
 #include <power/max17050.h>
@@ -77,7 +77,7 @@ void tui_pbar(int x, int y, u32 val, u32 fgcol, u32 bgcol)
 
 	x += 7 * gfx_con.fntsz;
 
-	for (int i = 0; i < (gfx_con.fntsz >> 3) * 6; i++)
+	for (u32 i = 0; i < (gfx_con.fntsz >> 3) * 6; i++)
 	{
 		gfx_line(x, y + i + 1, x + 3 * val, y + i + 1, fgcol);
 		gfx_line(x + 3 * val, y + i + 1, x + 3 * 100, y + i + 1, bgcol);

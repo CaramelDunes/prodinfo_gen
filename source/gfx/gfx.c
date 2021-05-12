@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2018 naehrwert
- * Copyright (c) 2018-2020 CTCaer
- * Copyright (c) 2019-2020 shchmue
+ * Copyright (c) 2018-2021 CTCaer
+ * Copyright (c) 2019-2021 shchmue
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -23,6 +23,8 @@
 // Global gfx console and context.
 gfx_ctxt_t gfx_ctxt;
 gfx_con_t gfx_con;
+
+static bool gfx_con_init_done = false;
 
 static const u8 _gfx_font[] = {
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Char 032 ( )
@@ -158,6 +160,8 @@ void gfx_con_init()
 	gfx_con.fillbg = 1;
 	gfx_con.bgcol = 0xFF1B1B1B;
 	gfx_con.mute = 0;
+
+	gfx_con_init_done = true;
 }
 
 void gfx_con_setcol(u32 fgcol, int fillbg, u32 bgcol)
@@ -274,7 +278,7 @@ void gfx_putc(char c)
 
 void gfx_puts(const char *s)
 {
-	if (!s || gfx_con.mute)
+	if (!s || !gfx_con_init_done || gfx_con.mute)
 		return;
 
 	for (; *s; s++)
@@ -330,7 +334,7 @@ void gfx_put_big_sep()
 
 void gfx_printf(const char *fmt, ...)
 {
-	if (gfx_con.mute)
+	if (!gfx_con_init_done || gfx_con.mute)
 		return;
 
 	va_list ap;
@@ -404,10 +408,12 @@ void gfx_printf(const char *fmt, ...)
 	va_end(ap);
 }
 
-void gfx_hexdump(u32 base, const u8 *buf, u32 len)
+void gfx_hexdump(u32 base, const void *buf, u32 len)
 {
-	if (gfx_con.mute)
+	if (!gfx_con_init_done || gfx_con.mute)
 		return;
+
+	u8 *buff = (u8 *)buf;
 
 	u8 prevFontSize = gfx_con.fntsz;
 	gfx_con.fntsz = 8;
@@ -420,7 +426,7 @@ void gfx_hexdump(u32 base, const u8 *buf, u32 len)
 				gfx_puts("| ");
 				for(u32 j = 0; j < 0x10; j++)
 				{
-					u8 c = buf[i - 0x10 + j];
+					u8 c = buff[i - 0x10 + j];
 					if(c >= 32 && c <= 126)
 						gfx_putc(c);
 					else
@@ -430,7 +436,7 @@ void gfx_hexdump(u32 base, const u8 *buf, u32 len)
 			}
 			gfx_printf("%08x: ", base + i);
 		}
-		gfx_printf("%02x ", buf[i]);
+		gfx_printf("%02x ", buff[i]);
 		if (i == len - 1)
 		{
 			int ln = len % 0x10 != 0;
@@ -444,7 +450,7 @@ void gfx_hexdump(u32 base, const u8 *buf, u32 len)
 			gfx_puts("| ");
 			for(u32 j = 0; j < (ln ? k : k + 1); j++)
 			{
-				u8 c = buf[i - k + j];
+				u8 c = buff[i - k + j];
 				if(c >= 32 && c <= 126)
 					gfx_putc(c);
 				else
@@ -457,12 +463,15 @@ void gfx_hexdump(u32 base, const u8 *buf, u32 len)
 	gfx_con.fntsz = prevFontSize;
 }
 
-void gfx_hexdiff(u32 base, const u8 *buf1, const u8 *buf2, u32 len)
+void gfx_hexdiff(u32 base, const void *buf1, const void *buf2, u32 len)
 {
-	if (gfx_con.mute)
+	if (!gfx_con_init_done || gfx_con.mute)
 		return;
 
-	if (memcmp(buf1, buf2, len) == 0)
+	u8 *buff1 = (u8 *)buf1;
+	u8 *buff2 = (u8 *)buf2;
+
+	if (memcmp(buff1, buff2, len) == 0)
 	{
 		gfx_printf("Diff: No differences found.\n");
 		return;
@@ -473,14 +482,14 @@ void gfx_hexdiff(u32 base, const u8 *buf1, const u8 *buf2, u32 len)
 	for(u32 i = 0; i < len; i+=0x10)
 	{
 		u32 bytes_left = len - i < 0x10 ? len - i : 0x10;
-		if (memcmp(buf1 + i, buf2 + i, bytes_left) == 0)
+		if (memcmp(buff1 + i, buff2 + i, bytes_left) == 0)
 			continue;
 		gfx_printf("Diff 1: %08x: ", base + i);
 		for (u32 j = 0; j < bytes_left; j++)
 		{
-			if (buf1[i+j] != buf2[i+j])
+			if (buff1[i+j] != buff2[i+j])
 				gfx_con.fgcol = COLOR_ORANGE;
-			gfx_printf("%02x ", buf1[i+j]);
+			gfx_printf("%02x ", buff1[i+j]);
 			gfx_con.fgcol = 0xFFCCCCCC;
 		}
 		gfx_puts("| ");
@@ -488,9 +497,9 @@ void gfx_hexdiff(u32 base, const u8 *buf1, const u8 *buf2, u32 len)
 		gfx_printf("Diff 2: %08x: ", base + i);
 		for (u32 j = 0; j < bytes_left; j++)
 		{
-			if (buf1[i+j] != buf2[i+j])
+			if (buff1[i+j] != buff2[i+j])
 				gfx_con.fgcol = COLOR_ORANGE;
-			gfx_printf("%02x ", buf2[i+j]);
+			gfx_printf("%02x ", buff2[i+j]);
 			gfx_con.fgcol = 0xFFCCCCCC;
 		}
 		gfx_puts("| ");

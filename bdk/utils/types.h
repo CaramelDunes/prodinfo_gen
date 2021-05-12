@@ -22,7 +22,7 @@
 #define ALWAYS_INLINE inline __attribute__((always_inline))
 
 #define ALIGN(x, a) (((x) + (a) - 1) & ~((a) - 1))
-#define ALIGN_DOWN(x, a) (((x) - ((a) - 1)) & ~((a) - 1))
+#define ALIGN_DOWN(x, a) ((x) & ~((a) - 1))
 #define BIT(n) (1U << (n))
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
@@ -73,6 +73,9 @@ static const u32 colors[6] = {COLOR_RED, COLOR_ORANGE, COLOR_YELLOW, COLOR_GREEN
 typedef int bool;
 #define true  1
 #define false 0
+
+#define DISABLE 0
+#define ENABLE  1
 
 #define BOOT_CFG_AUTOBOOT_EN BIT(0)
 #define BOOT_CFG_FROM_LAUNCH BIT(1)

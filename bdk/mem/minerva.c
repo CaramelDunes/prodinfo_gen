@@ -60,7 +60,7 @@ u32 minerva_init()
 		mtc_config_t mtc_tmp;
 
 		mtc_tmp.mtc_table = mtc_cfg->mtc_table;
-		mtc_tmp.sdram_id = (fuse_read_odm(4) >> 3) & 0x1F;
+		mtc_tmp.sdram_id  = fuse_read_dramid(false);
 		mtc_tmp.init_done = MTC_NEW_MAGIC;
 
 		u32 ep_addr = ianos_loader("bootloader/sys/libsys_minerva.bso", DRAM_LIB, (void *)&mtc_tmp);
@@ -81,7 +81,7 @@ u32 minerva_init()
 	// Set table to nyx storage.
 	mtc_cfg->mtc_table = (emc_table_t *)nyx_str->mtc_table;
 
-	mtc_cfg->sdram_id = (fuse_read_odm(4) >> 3) & 0x1F;
+	mtc_cfg->sdram_id  = fuse_read_dramid(false);
 	mtc_cfg->init_done = MTC_NEW_MAGIC; // Initialize mtc table.
 
 	u32 ep_addr = ianos_loader("bootloader/sys/libsys_minerva.bso", DRAM_LIB, (void *)mtc_cfg);
@@ -104,21 +104,21 @@ u32 minerva_init()
 	}
 
 	mtc_cfg->rate_from = mtc_cfg->mtc_table[curr_ram_idx].rate_khz;
-	mtc_cfg->rate_to = 204000;
+	mtc_cfg->rate_to = FREQ_204;
 	mtc_cfg->train_mode = OP_TRAIN;
 	minerva_cfg(mtc_cfg, NULL);
-	mtc_cfg->rate_to = 800000;
+	mtc_cfg->rate_to = FREQ_800;
 	minerva_cfg(mtc_cfg, NULL);
-	mtc_cfg->rate_to = 1600000;
+	mtc_cfg->rate_to = FREQ_1600;
 	minerva_cfg(mtc_cfg, NULL);
 
 	// FSP WAR.
 	mtc_cfg->train_mode = OP_SWITCH;
-	mtc_cfg->rate_to = 800000;
+	mtc_cfg->rate_to = FREQ_800;
 	minerva_cfg(mtc_cfg, NULL);
 
 	// Switch to max.
-	mtc_cfg->rate_to = 1600000;
+	mtc_cfg->rate_to = FREQ_1600;
 	minerva_cfg(mtc_cfg, NULL);
 
 	return 0;
@@ -129,6 +129,7 @@ void minerva_change_freq(minerva_freq_t freq)
 	if (!minerva_cfg)
 		return;
 
+	// Check if requested frequency is different. Do not allow otherwise because it will hang.
 	mtc_config_t *mtc_cfg = (mtc_config_t *)&nyx_str->mtc_cfg;
 	if (mtc_cfg->rate_from != freq)
 	{
@@ -136,6 +137,23 @@ void minerva_change_freq(minerva_freq_t freq)
 		mtc_cfg->train_mode = OP_SWITCH;
 		minerva_cfg(mtc_cfg, NULL);
 	}
+}
+
+void minerva_prep_boot_freq()
+{
+	if (!minerva_cfg)
+		return;
+
+	mtc_config_t *mtc_cfg = (mtc_config_t *)&nyx_str->mtc_cfg;
+
+	// Check if there's RAM OC. If not exit.
+	if (mtc_cfg->mtc_table[mtc_cfg->table_entries - 1].rate_khz == FREQ_1600)
+		return;
+
+	// FSP WAR.
+	minerva_change_freq(FREQ_204);
+	// Scale down to 800 MHz boot freq.
+	minerva_change_freq(FREQ_800);
 }
 
 void minerva_periodic_training()

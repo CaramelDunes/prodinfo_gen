@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018 naehrwert
+ * Copyright (c) 2019-2021 CTCaer
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -19,6 +20,7 @@
 #include "nx_emmc.h"
 #include "emummc.h"
 #include <mem/heap.h>
+#include <soc/fuse.h>
 #include <storage/mbr_gpt.h>
 #include <utils/list.h>
 
@@ -30,7 +32,11 @@ void nx_emmc_gpt_parse(link_t *gpt, sdmmc_storage_t *storage)
 {
 	gpt_t *gpt_buf = (gpt_t *)calloc(NX_GPT_NUM_BLOCKS, NX_EMMC_BLOCKSIZE);
 
-	emummc_storage_read(storage, NX_GPT_FIRST_LBA, NX_GPT_NUM_BLOCKS, gpt_buf);
+	emummc_storage_read(NX_GPT_FIRST_LBA, NX_GPT_NUM_BLOCKS, gpt_buf);
+
+	// Check if no GPT or more than max allowed entries.
+	if (memcmp(&gpt_buf->header.signature, "EFI PART", 8) || gpt_buf->header.num_part_ents > 128)
+		goto out;
 
 	for (u32 i = 0; i < gpt_buf->header.num_part_ents; i++)
 	{
@@ -52,6 +58,7 @@ void nx_emmc_gpt_parse(link_t *gpt, sdmmc_storage_t *storage)
 		list_append(gpt, &part->link);
 	}
 
+out:
 	free(gpt_buf);
 }
 
@@ -66,6 +73,7 @@ emmc_part_t *nx_emmc_part_find(link_t *gpt, const char *name)
 	LIST_FOREACH_ENTRY(emmc_part_t, part, gpt, link)
 		if (!strcmp(part->name, name))
 			return part;
+
 	return NULL;
 }
 
@@ -74,7 +82,8 @@ int nx_emmc_part_read(sdmmc_storage_t *storage, emmc_part_t *part, u32 sector_of
 	// The last LBA is inclusive.
 	if (part->lba_start + sector_off > part->lba_end)
 		return 0;
-	return emummc_storage_read(storage, part->lba_start + sector_off, num_sectors, buf);
+
+	return emummc_storage_read(part->lba_start + sector_off, num_sectors, buf);
 }
 
 int nx_emmc_part_write(sdmmc_storage_t *storage, emmc_part_t *part, u32 sector_off, u32 num_sectors, void *buf)
@@ -82,5 +91,20 @@ int nx_emmc_part_write(sdmmc_storage_t *storage, emmc_part_t *part, u32 sector_o
 	// The last LBA is inclusive.
 	if (part->lba_start + sector_off > part->lba_end)
 		return 0;
-	return sdmmc_storage_write(storage, part->lba_start + sector_off, num_sectors, buf);
+
+	return emummc_storage_write(part->lba_start + sector_off, num_sectors, buf);
+}
+
+void nx_emmc_get_autorcm_masks(u8 *mod0, u8 *mod1)
+{
+	if (fuse_read_hw_state() == FUSE_NX_HW_STATE_PROD)
+	{
+		*mod0 = 0xF7;
+		*mod1 = 0x86;
+	}
+	else
+	{
+		*mod0 = 0x37;
+		*mod1 = 0x84;
+	}
 }

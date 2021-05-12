@@ -17,7 +17,7 @@
 #include "keys.h"
 
 #include "../config.h"
-#include <gfx/di.h>
+#include <display/di.h>
 #include <gfx_utils.h>
 #include "../gfx/tui.h"
 #include "../hos/pkg1.h"
@@ -93,8 +93,8 @@ static ALWAYS_INLINE u32 _get_tsec_fw_size(tsec_key_data_t *key_data) {
     return key_data->blob0_size + sizeof(tsec_key_data_t) + key_data->blob1_size + key_data->blob2_size + key_data->blob3_size + key_data->blob4_size;
 }
 
-static u8 *_read_pkg1(sdmmc_t *sdmmc, const pkg1_id_t **pkg1_id) {
-    if (emummc_storage_init_mmc(&emmc_storage, sdmmc)) {
+static u8 *_read_pkg1(const pkg1_id_t **pkg1_id) {
+    if (emummc_storage_init_mmc()) {
         EPRINTF("Unable to init MMC.");
         return NULL;
     }
@@ -102,11 +102,11 @@ static u8 *_read_pkg1(sdmmc_t *sdmmc, const pkg1_id_t **pkg1_id) {
 
     // Read package1.
     u8 *pkg1 = (u8 *)malloc(PKG1_MAX_SIZE);
-    if (!emummc_storage_set_mmc_partition(&emmc_storage, EMMC_BOOT0)) {
+    if (!emummc_storage_set_mmc_partition(EMMC_BOOT0)) {
         EPRINTF("Unable to set partition.");
         return NULL;
     }
-    if (!emummc_storage_read(&emmc_storage, PKG1_OFFSET / NX_EMMC_BLOCKSIZE, PKG1_MAX_SIZE / NX_EMMC_BLOCKSIZE, pkg1)) {
+    if (!emummc_storage_read(PKG1_OFFSET / NX_EMMC_BLOCKSIZE, PKG1_MAX_SIZE / NX_EMMC_BLOCKSIZE, pkg1)) {
         EPRINTF("Unable to read pkg1.");
         return NULL;
     }
@@ -283,7 +283,7 @@ static void _derive_master_keys_from_keyblobs(key_derivation_ctx_t *keys) {
 
     se_aes_key_set(8, keys->tsec_keys, sizeof(keys->tsec_keys) / 2);
 
-    if (!emummc_storage_read(&emmc_storage, KEYBLOB_OFFSET / NX_EMMC_BLOCKSIZE, KB_FIRMWARE_VERSION_600 + 1, keyblob_block)) {
+    if (!emummc_storage_read(KEYBLOB_OFFSET / NX_EMMC_BLOCKSIZE, KB_FIRMWARE_VERSION_600 + 1, keyblob_block)) {
         EPRINTF("Unable to read keyblobs.");
     }
 
@@ -577,7 +577,7 @@ static bool _derive_titlekeys(key_derivation_ctx_t *keys, titlekey_buffer_t *tit
 
     rsa_keypair_t rsa_keypair = {0};
 
-    if (!emummc_storage_read(&emmc_storage, NX_EMMC_CALIBRATION_OFFSET / NX_EMMC_BLOCKSIZE, NX_EMMC_CALIBRATION_SIZE / NX_EMMC_BLOCKSIZE, titlekey_buffer->read_buffer)) {
+    if (!emummc_storage_read(NX_EMMC_CALIBRATION_OFFSET / NX_EMMC_BLOCKSIZE, NX_EMMC_CALIBRATION_SIZE / NX_EMMC_BLOCKSIZE, titlekey_buffer->read_buffer)) {
         EPRINTF("Unable to read PRODINFO.");
         return false;
     }
@@ -643,7 +643,7 @@ static bool _derive_emmc_keys(key_derivation_ctx_t *keys, titlekey_buffer_t *tit
     se_aes_key_set(4, keys->bis_key[2] + 0x00, AES_128_KEY_SIZE);
     se_aes_key_set(5, keys->bis_key[2] + 0x10, AES_128_KEY_SIZE);
 
-    if (!emummc_storage_set_mmc_partition(&emmc_storage, EMMC_GPP)) {
+    if (!emummc_storage_set_mmc_partition(EMMC_GPP)) {
         EPRINTF("Unable to set partition.");
         return false;
     }
@@ -690,7 +690,7 @@ static void _save_mariko_partial_keys(char *text_buffer) {
     for (u32 ks = 12; ks < 16; ks++) {
         // First, encrypt zeros with complete key
         se_aes_crypt_block_ecb(ks, 1, &data[3 * AES_128_KEY_SIZE], zeros);
-        pos += sprintf(&text_buffer[pos], "%d\n", ks);
+        pos += s_printf(&text_buffer[pos], "%d\n", ks);
 
         // We only need to overwrite 3 of the dwords of the key
         for (u32 i = 0; i < 3; i++) {
@@ -701,8 +701,8 @@ static void _save_mariko_partial_keys(char *text_buffer) {
         }
         for (u32 i = 0; i < 4; i++) {
             for (u32 j = 0; j < AES_128_KEY_SIZE; j++)
-                pos += sprintf(&text_buffer[pos], "%02x", data[i * AES_128_KEY_SIZE + j]);
-            pos += sprintf(&text_buffer[pos], "\n");
+                pos += s_printf(&text_buffer[pos], "%02x", data[i * AES_128_KEY_SIZE + j]);
+            pos += s_printf(&text_buffer[pos], "\n");
         }
     }
     free(data);
@@ -788,7 +788,7 @@ static void _save_keys_to_sd(key_derivation_ctx_t *keys, titlekey_buffer_t *titl
     f_mkdir("sd:/switch");
     char keyfile_path[30] = "sd:/switch/prod.keys";
     if (fuse_read_odm(4) & 3)
-        sprintf(&keyfile_path[11], "dev.keys");
+        s_printf(&keyfile_path[11], "dev.keys");
 
     FILINFO fno;
     if (!sd_save_to_file(text_buffer, strlen(text_buffer), keyfile_path) && !f_stat(keyfile_path, &fno)) {
@@ -811,13 +811,13 @@ static void _save_keys_to_sd(key_derivation_ctx_t *keys, titlekey_buffer_t *titl
 
     for (u32 i = 0; i < _titlekey_count; i++) {
         for (u32 j = 0; j < AES_128_KEY_SIZE; j++)
-            sprintf(&titlekey_text[i].rights_id[j * 2], "%02x", titlekey_buffer->rights_ids[i][j]);
-        sprintf(titlekey_text[i].equals, " = ");
+            s_printf(&titlekey_text[i].rights_id[j * 2], "%02x", titlekey_buffer->rights_ids[i][j]);
+        s_printf(titlekey_text[i].equals, " = ");
         for (u32 j = 0; j < AES_128_KEY_SIZE; j++)
-            sprintf(&titlekey_text[i].titlekey[j * 2], "%02x", titlekey_buffer->titlekeys[i][j]);
-        sprintf(titlekey_text[i].newline, "\n");
+            s_printf(&titlekey_text[i].titlekey[j * 2], "%02x", titlekey_buffer->titlekeys[i][j]);
+        s_printf(titlekey_text[i].newline, "\n");
     }
-    sprintf(&keyfile_path[11], "title.keys");
+    s_printf(&keyfile_path[11], "title.keys");
     if (!sd_save_to_file(text_buffer, strlen(text_buffer), keyfile_path) && !f_stat(keyfile_path, &fno)) {
         gfx_printf("%kWrote %d bytes to %s\n", colors[(color_idx++) % 6], (u32)fno.fsize, keyfile_path);
     } else
@@ -828,10 +828,9 @@ static void _save_keys_to_sd(key_derivation_ctx_t *keys, titlekey_buffer_t *titl
 
 static void _derive_keys() {
     u32 start_whole_operation_time = get_tmr_us();
-    sdmmc_t sdmmc;
 
     const pkg1_id_t *pkg1_id;
-    u8 *pkg1 = _read_pkg1(&sdmmc, &pkg1_id);
+    u8 *pkg1 = _read_pkg1(&pkg1_id);
     if (!pkg1) {
         return;
     }
@@ -909,17 +908,17 @@ static void _save_key(const char *name, const void *data, u32 len, char *outbuf)
     if (!_key_exists(data))
         return;
     u32 pos = strlen(outbuf);
-    pos += sprintf(&outbuf[pos], "%s = ", name);
+    pos += s_printf(&outbuf[pos], "%s = ", name);
     for (u32 i = 0; i < len; i++)
-        pos += sprintf(&outbuf[pos], "%02x", *(u8*)(data + i));
-    sprintf(&outbuf[pos], "\n");
+        pos += s_printf(&outbuf[pos], "%02x", *(u8*)(data + i));
+    s_printf(&outbuf[pos], "\n");
     _key_count++;
 }
 
 static void _save_key_family(const char *name, const void *data, u32 start_key, u32 num_keys, u32 len, char *outbuf) {
     char *temp_name = calloc(1, 0x40);
     for (u32 i = 0; i < num_keys; i++) {
-        sprintf(temp_name, "%s_%02x", name, i + start_key);
+        s_printf(temp_name, "%s_%02x", name, i + start_key);
         _save_key(temp_name, data + i * len, len, outbuf);
     }
     free(temp_name);

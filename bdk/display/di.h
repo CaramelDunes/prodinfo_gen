@@ -650,7 +650,9 @@
  * [10] 81 [26]: JDI LPM062M326A
  * [10] 96 [09]: JDI LAM062M109A
  * [20] 93 [0F]: InnoLux P062CCA-AZ1 (Rev A1)
- * [20] 95 [0F]: InnoLux P062CCA-AZ2
+ * [20] 95 [0F]: InnoLux P062CCA-AZ2 (Rev B1)
+ * [20] 96 [0F]: InnoLux P062CCA-AZ3 [UNCONFIRMED MODEL REV]
+ * [20] 98 [0F]: InnoLux P062CCA-??? [UNCONFIRMED MODEL REV]
  * [30] 94 [0F]: AUO A062TAN01 (59.06A33.001)
  * [30] 95 [0F]: AUO A062TAN02 (59.06A33.002)
  *
@@ -671,10 +673,12 @@
  * 20h: InnoLux Corporation
  * 30h: AU Optronics
  * 40h: Unknown1
+ * 50h: Unknown2 (OLED? Samsung? LG?)
  *
  * Boards, Panel Size:
  * 0Fh: Icosa/Iowa, 6.2"
  * 10h: Hoag,       5.5"
+ * 20h: Unknown,    x.x"
  */
 
 enum
@@ -693,8 +697,9 @@ void display_init();
 void display_backlight_pwm_init();
 void display_end();
 
-/*! Get Display panel ID. */
-u16 display_get_decoded_lcd_id();
+/*! Get/Set Display panel ID. */
+u16  display_get_decoded_panel_id();
+void display_set_decoded_panel_id(u32 id);
 
 /*! Show one single color on the display. */
 void display_color_screen(u32 color);
@@ -702,6 +707,7 @@ void display_color_screen(u32 color);
 /*! Switches screen backlight ON/OFF. */
 void display_backlight(bool enable);
 void display_backlight_brightness(u32 brightness, u32 step_delay);
+u32  display_get_backlight_brightness();
 
 /*! Init display in full 1280x720 resolution (B8G8R8A8, line stride 768, framebuffer size = 1280*768*4 bytes). */
 u32 *display_init_framebuffer_pitch();

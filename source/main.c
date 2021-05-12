@@ -1,8 +1,8 @@
 /*
  * Copyright (c) 2018 naehrwert
  *
- * Copyright (c) 2018-2020 CTCaer
- * Copyright (c) 2019-2020 shchmue
+ * Copyright (c) 2018-2021 CTCaer
+ * Copyright (c) 2019-2021 shchmue
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -20,7 +20,7 @@
 #include <string.h>
 
 #include "config.h"
-#include <gfx/di.h>
+#include <display/di.h>
 #include <gfx_utils.h>
 #include "gfx/tui.h"
 #include <libs/fatfs/ff.h>
@@ -57,6 +57,7 @@ volatile nyx_storage_t *nyx_str = (nyx_storage_t *)NYX_STORAGE_ADDR;
 #define EXT_PAYLOAD_ADDR    0xC0000000
 #define RCM_PAYLOAD_ADDR    (EXT_PAYLOAD_ADDR + ALIGN(PATCHED_RELOC_SZ, 0x10))
 #define COREBOOT_END_ADDR   0xD0000000
+#define COREBOOT_VER_OFF    0x41
 #define CBFS_DRAM_EN_ADDR   0x4003e000
 #define  CBFS_DRAM_MAGIC    0x4452414D // "DRAM"
 
@@ -80,9 +81,10 @@ void reloc_patcher(u32 payload_dst, u32 payload_src, u32 payload_size)
 	}
 }
 
-int launch_payload(char *path)
+int launch_payload(char *path, bool clear_screen)
 {
-	gfx_clear_grey(0x1B);
+	if (clear_screen)
+		gfx_clear_grey(0x1B);
 	gfx_con_setpos(0, 0);
 	if (!path)
 		return 1;
@@ -92,10 +94,10 @@ int launch_payload(char *path)
 		FIL fp;
 		if (f_open(&fp, path, FA_READ))
 		{
+			gfx_con.mute = false;
 			EPRINTFARGS("Payload file is missing!\n(%s)", path);
-			sd_unmount();
 
-			return 1;
+			goto out;
 		}
 
 		// Read and copy the payload to our chosen address
@@ -108,19 +110,27 @@ int launch_payload(char *path)
 		{
 			coreboot_addr = (void *)(COREBOOT_END_ADDR - size);
 			buf = coreboot_addr;
+			if (h_cfg.t210b01)
+			{
+				f_close(&fp);
+
+				gfx_con.mute = false;
+				EPRINTF("Coreboot not allowed on Mariko!");
+
+				goto out;
+			}
 		}
 
 		if (f_read(&fp, buf, size, NULL))
 		{
 			f_close(&fp);
-			sd_unmount();
 
-			return 1;
+			goto out;
 		}
 
 		f_close(&fp);
 
-		sd_unmount();
+		sd_end();
 
 		if (size < 0x30000)
 		{
@@ -131,7 +141,12 @@ int launch_payload(char *path)
 		else
 		{
 			reloc_patcher(PATCHED_RELOC_ENTRY, EXT_PAYLOAD_ADDR, 0x7000);
-			hw_reinit_workaround(true, 0);
+
+			// Get coreboot seamless display magic.
+			u32 magic = 0;
+			char *magic_ptr = buf + COREBOOT_VER_OFF;
+			memcpy(&magic, magic_ptr + strlen(magic_ptr) - 4, 4);
+			hw_reinit_workaround(true, magic);
 		}
 
 		// Some cards (Sandisk U1), do not like a fast power cycle. Wait min 100ms.
@@ -143,6 +158,8 @@ int launch_payload(char *path)
 		(*ext_payload_ptr)();
 	}
 
+out:
+	sd_end();
 	return 1;
 }
 
@@ -221,7 +238,8 @@ void launch_tools()
 				free(ments);
 				free(dir);
 				free(filelist);
-				sd_unmount();
+				sd_end();
+
 				return;
 			}
 		}
@@ -247,15 +265,12 @@ void launch_tools()
 		else
 			memcpy(dir, file_sec, strlen(file_sec) + 1);
 
-		if (launch_payload(dir))
-		{
-			EPRINTF("Failed to launch payload.");
-			free(dir);
-		}
+		launch_payload(dir, true);
+		EPRINTF("Failed to launch payload.");
 	}
 
 out:
-	sd_unmount();
+	sd_end();
 	free(dir);
 
 	btn_wait();
@@ -278,15 +293,20 @@ void dump_emunand()
 	dump_keys();
 }
 
+power_state_t STATE_POWER_OFF           = POWER_OFF_RESET;
+power_state_t STATE_REBOOT_FULL         = POWER_OFF_REBOOT;
+power_state_t STATE_REBOOT_RCM          = REBOOT_RCM;
+power_state_t STATE_REBOOT_BYPASS_FUSES = REBOOT_BYPASS_FUSES;
+
 ment_t ment_top[] = {
 	MDEF_HANDLER("Dump from SysNAND | Key generation: unk", dump_sysnand, COLOR_RED),
 	MDEF_HANDLER("Dump from EmuNAND | Key generation: unk", dump_emunand, COLOR_ORANGE),
 	MDEF_CAPTION("---------------", COLOR_YELLOW),
 	MDEF_HANDLER("Payloads...", launch_tools, COLOR_GREEN),
 	MDEF_CAPTION("---------------", COLOR_BLUE),
-	MDEF_HANDLER("Reboot (Normal)", reboot_normal, COLOR_VIOLET),
-	MDEF_HANDLER("Reboot (RCM)", reboot_rcm, COLOR_RED),
-	MDEF_HANDLER("Power off", power_off, COLOR_ORANGE),
+	MDEF_HANDLER_EX("Reboot (OFW)", &STATE_REBOOT_BYPASS_FUSES, power_set_state_ex, COLOR_VIOLET),
+	MDEF_HANDLER_EX("Reboot (RCM)", &STATE_REBOOT_RCM, power_set_state_ex, COLOR_RED),
+	MDEF_HANDLER_EX("Power off", &STATE_POWER_OFF, power_set_state_ex, COLOR_ORANGE),
 	MDEF_END()
 };
 
@@ -305,7 +325,7 @@ void _get_key_generations(char *sysnand_label, char *emunand_label)
 	u32 pk1_offset = h_cfg.t210b01 ? sizeof(bl_hdr_t210b01_t) : 0; // Skip T210B01 OEM header.
 	const pkg1_id_t *pkg1_id = pkg1_identify(pkg1 + pk1_offset);
 	if (pkg1_id) {
-		sprintf(sysnand_label + 36, "% 3d", pkg1_id->kb);
+		s_printf(sysnand_label + 36, "% 3d", pkg1_id->kb);
 		ment_top[0].caption = sysnand_label;
 		if (h_cfg.emummc_force_disable)
 		{
@@ -314,15 +334,15 @@ void _get_key_generations(char *sysnand_label, char *emunand_label)
 		}
 	}
 
-	emummc_storage_init_mmc(&storage, &sdmmc);
+	emummc_storage_init_mmc();
 	memset(pkg1, 0, PKG1_MAX_SIZE);
-	emummc_storage_set_mmc_partition(&storage, EMMC_BOOT0);
-	emummc_storage_read(&storage, PKG1_OFFSET / NX_EMMC_BLOCKSIZE, PKG1_MAX_SIZE / NX_EMMC_BLOCKSIZE, pkg1);
-	emummc_storage_end(&storage);
+	emummc_storage_set_mmc_partition(EMMC_BOOT0);
+	emummc_storage_read(PKG1_OFFSET / NX_EMMC_BLOCKSIZE, PKG1_MAX_SIZE / NX_EMMC_BLOCKSIZE, pkg1);
+	emummc_storage_end();
 
 	pkg1_id = pkg1_identify(pkg1 + pk1_offset);
 	if (pkg1_id) {
-		sprintf(emunand_label + 36, "% 3d", pkg1_id->kb);
+		s_printf(emunand_label + 36, "% 3d", pkg1_id->kb);
 		free(pkg1);
 		ment_top[1].caption = emunand_label;
 	}
@@ -367,8 +387,9 @@ void ipl_main()
 	display_backlight_pwm_init();
 
 	// Overclock BPMP.
-	bpmp_clk_rate_set(BPMP_CLK_DEFAULT_BOOST);
+	bpmp_clk_rate_set(h_cfg.t210b01 ? BPMP_CLK_DEFAULT_BOOST : BPMP_CLK_LOWER_BOOST);
 
+	// Load emuMMC configuration from SD.
 	emummc_load_cfg();
 	// Ignore whether emummc is enabled.
 	h_cfg.emummc_force_disable = emu_cfg.sector == 0 && !emu_cfg.path;
@@ -401,7 +422,7 @@ void ipl_main()
 
 	if (h_cfg.rcm_patched)
 	{
-		ment_top[5].handler = reboot_full;
+		ment_top[6].data = &STATE_REBOOT_FULL;
 	}
 
 	// Update key generations listed in menu.
