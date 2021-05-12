@@ -6,7 +6,6 @@ SECTIONS {
 	.text : {
 		*(.text._start);
 		KEEP(*(._boot_cfg));
-		KEEP(*(._octopus));
 		*(.text*);
 	}
 	.data : {
