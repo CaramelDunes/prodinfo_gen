@@ -30,6 +30,8 @@
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof(*(x)))
 #define LOG2(n) (32 - __builtin_clz(n) - 1)
+#define CLZ(n) __builtin_clz(n)
+#define CLO(n) __builtin_clz(~n)
 
 #define OFFSET_OF(t, m) ((u32)&((t *)NULL)->m)
 #define CONTAINER_OF(mp, t, mn) ((t *)((u32)mp - OFFSET_OF(t, mn)))

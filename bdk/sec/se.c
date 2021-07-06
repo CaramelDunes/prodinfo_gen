@@ -391,7 +391,7 @@ int se_aes_crypt_ctr(u32 ks, void *dst, u32 dst_size, const void *src, u32 src_s
 		SE_CRYPTO_XOR_POS(XOR_BOTTOM) | SE_CRYPTO_INPUT_SEL(INPUT_LNR_CTR) | SE_CRYPTO_CTR_CNTN(1);
 	_se_aes_ctr_set(ctr);
 
-	u32 src_size_aligned = src_size & 0xFFFFFFF0;
+	u32 src_size_aligned = ALIGN_DOWN(src_size, 0x10);
 	u32 src_size_delta = src_size & 0xF;
 
 	if (src_size_aligned)
