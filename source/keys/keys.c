@@ -224,12 +224,12 @@ static bool _derive_tsec_keys(tsec_ctxt_t *tsec_ctxt, u32 kb, key_derivation_ctx
     return true;
 }
 
-static void _derive_master_key_mariko(u32 kb, key_derivation_ctx_t *keys) {
+static void _derive_master_key_mariko(key_derivation_ctx_t *keys) {
     // Relies on the SBK being properly set in slot 14
     se_aes_crypt_block_ecb(14, 0, keys->device_key_4x, device_master_key_source_kek_source);
     // Relies on the Mariko KEK being properly set in slot 12
-    se_aes_unwrap_key(8, 12, &mariko_master_kek_sources[kb - KB_FIRMWARE_VERSION_600]);
-    se_aes_crypt_block_ecb(8, 0, keys->master_key[kb], master_key_source);
+    se_aes_unwrap_key(8, 12, &mariko_master_kek_sources[KB_FIRMWARE_VERSION_MAX - KB_FIRMWARE_VERSION_600]);
+    se_aes_crypt_block_ecb(8, 0, keys->master_key[KB_FIRMWARE_VERSION_MAX], master_key_source);
 }
 
 static void _derive_master_keys_post_620(u32 pkg1_kb, key_derivation_ctx_t *keys) {
@@ -301,7 +301,7 @@ static void _derive_master_keys_from_keyblobs(key_derivation_ctx_t *keys) {
         // verify keyblob is not corrupt
         se_aes_key_set(10, keys->keyblob_mac_key[i], sizeof(keys->keyblob_mac_key[i]));
         se_aes_cmac(10, keyblob_mac, sizeof(keyblob_mac), current_keyblob->iv, sizeof(current_keyblob->iv) + sizeof(keyblob_t));
-        if (memcmp(current_keyblob, keyblob_mac, sizeof(keyblob_mac)) != 0) {
+        if (memcmp(current_keyblob->cmac, keyblob_mac, sizeof(keyblob_mac)) != 0) {
             EPRINTFARGS("Keyblob %x corrupt.", i);
             continue;
         }
@@ -851,8 +851,8 @@ static void _derive_keys() {
 
     // Master key derivation
     if (h_cfg.t210b01) {
-        _derive_master_key_mariko(pkg1_id->kb, &keys);
-        _derive_master_keys_post_620(pkg1_id->kb, &keys);
+        _derive_master_key_mariko(&keys);
+        _derive_master_keys_post_620(KB_FIRMWARE_VERSION_MAX, &keys);
     } else {
         _derive_master_keys_post_620(pkg1_id->kb, &keys);
         _derive_master_keys_from_keyblobs(&keys);
