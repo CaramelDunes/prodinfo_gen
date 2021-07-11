@@ -269,16 +269,16 @@ static void _derive_master_keys_from_keyblobs(key_derivation_ctx_t *keys) {
     encrypted_keyblob_t *current_keyblob = (encrypted_keyblob_t *)keyblob_block;
     u32 keyblob_mac[AES_128_KEY_SIZE / 4] = {0};
 
-    keys->sbk[0] = FUSE(FUSE_PRIVATE_KEY0);
-    keys->sbk[1] = FUSE(FUSE_PRIVATE_KEY1);
-    keys->sbk[2] = FUSE(FUSE_PRIVATE_KEY2);
-    keys->sbk[3] = FUSE(FUSE_PRIVATE_KEY3);
-
-    if (keys->sbk[0] == 0xFFFFFFFF) {
+    if (h_cfg.sbk_set) {
         u8 *aes_keys = (u8 *)calloc(0x1000, 1);
         se_get_aes_keys(aes_keys + 0x800, aes_keys, AES_128_KEY_SIZE);
         memcpy(keys->sbk, aes_keys + 14 * AES_128_KEY_SIZE, AES_128_KEY_SIZE);
         free(aes_keys);
+    } else {
+        keys->sbk[0] = FUSE(FUSE_PRIVATE_KEY0);
+        keys->sbk[1] = FUSE(FUSE_PRIVATE_KEY1);
+        keys->sbk[2] = FUSE(FUSE_PRIVATE_KEY2);
+        keys->sbk[3] = FUSE(FUSE_PRIVATE_KEY3);
     }
 
     se_aes_key_set(8, keys->tsec_keys, sizeof(keys->tsec_keys) / 2);
