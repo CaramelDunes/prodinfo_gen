@@ -826,7 +826,21 @@ static void _save_keys_to_sd(key_derivation_ctx_t *keys, titlekey_buffer_t *titl
     free(text_buffer);
 }
 
+static bool _check_keyslot_access() {
+    u8 test_data[AES_128_KEY_SIZE] = {0};
+    const u8 test_ciphertext[AES_128_KEY_SIZE] = {0};
+    se_aes_key_set(8, "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f", SE_KEY_128_SIZE);
+    se_aes_crypt_block_ecb(8, 0, test_data, test_ciphertext);
+
+    return memcmp(test_data, "\x7b\x1d\x29\xa1\x6c\xf8\xcc\xab\x84\xf0\xb8\xa5\x98\xe4\x2f\xa6", SE_KEY_128_SIZE) == 0;
+}
+
 static void _derive_keys() {
+    if (!_check_keyslot_access()) {
+        EPRINTF("Unable to set crypto keyslots!\nTry launching payload differently\n or flash Spacecraft-NX if using a modchip!");
+        return;
+    }
+
     u32 start_whole_operation_time = get_tmr_us();
 
     const pkg1_id_t *pkg1_id;
@@ -948,10 +962,10 @@ static void _get_device_key(u32 ks, void *out_device_key, u32 revision, const vo
     }
     u32 temp_key[AES_128_KEY_SIZE / 4] = {0};
     se_aes_key_set(ks, new_device_key, AES_128_KEY_SIZE);
-    se_aes_crypt_ecb(ks, 0, temp_key, AES_128_KEY_SIZE, device_master_key_source_sources[revision], AES_128_KEY_SIZE);
+    se_aes_crypt_block_ecb(ks, 0, temp_key, device_master_key_source_sources[revision]);
     se_aes_key_set(ks, master_key, AES_128_KEY_SIZE);
     se_aes_unwrap_key(ks, ks, device_master_kek_sources[revision]);
-    se_aes_crypt_ecb(ks, 0, out_device_key, AES_128_KEY_SIZE, temp_key, AES_128_KEY_SIZE);
+    se_aes_crypt_block_ecb(ks, 0, out_device_key, temp_key);
 }
 
 static bool _test_key_pair(const void *public_exponent, const void *private_exponent, const void *modulus) {
