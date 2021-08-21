@@ -682,15 +682,28 @@ static bool _derive_emmc_keys(key_derivation_ctx_t *keys, titlekey_buffer_t *tit
 
 // The security engine supports partial key override for locked keyslots
 // This allows for a manageable brute force on a PC
-// Then we can recover the Mariko KEK, BEK, unique SBK and SSK
-static void _save_mariko_partial_keys(char *text_buffer) {
+// Then the Mariko AES class keys, KEK, BEK, unique SBK and SSK can be recovered
+static void _save_mariko_partial_keys(u32 start, u32 count, bool append) {
+    if (start + count > SE_AES_KEYSLOT_COUNT) {
+        return;
+    }
+
     u32 pos = 0;
     u32 zeros[4] = {0};
     u8 *data = malloc(4 * AES_128_KEY_SIZE);
-    for (u32 ks = 12; ks < 16; ks++) {
-        // First, encrypt zeros with complete key
+    char *text_buffer = calloc(1, 0x100 * count);
+
+    for (u32 ks = start; ks < start + count; ks++) {
+        // Check if key is as expected
+        if (ks < ARRAY_SIZE(mariko_key_vectors)) {
+            se_aes_crypt_block_ecb(ks, 0, &data[0], mariko_key_vectors[ks]);
+            if (_key_exists(data)) {
+                continue;
+            }
+        }
+
+        // Encrypt zeros with complete key
         se_aes_crypt_block_ecb(ks, 1, &data[3 * AES_128_KEY_SIZE], zeros);
-        pos += s_printf(&text_buffer[pos], "%d\n", ks);
 
         // We only need to overwrite 3 of the dwords of the key
         for (u32 i = 0; i < 3; i++) {
@@ -699,15 +712,49 @@ static void _save_mariko_partial_keys(char *text_buffer) {
             // Encrypt zeros with more of the key zeroed out
             se_aes_crypt_block_ecb(ks, 1, &data[(2 - i) * AES_128_KEY_SIZE], zeros);
         }
+
+        // Skip saving key if two results are the same indicating unsuccessful overwrite or empty slot
+        if (memcmp(&data[0], &data[SE_KEY_128_SIZE], AES_128_KEY_SIZE) == 0) {
+            continue;
+        }
+
+        pos += s_printf(&text_buffer[pos], "%d\n", ks);
         for (u32 i = 0; i < 4; i++) {
             for (u32 j = 0; j < AES_128_KEY_SIZE; j++)
                 pos += s_printf(&text_buffer[pos], "%02x", data[i * AES_128_KEY_SIZE + j]);
-            pos += s_printf(&text_buffer[pos], "\n");
+            pos += s_printf(&text_buffer[pos], " ");
         }
+        pos += s_printf(&text_buffer[pos], "\n");
     }
     free(data);
-    sd_save_to_file(text_buffer, strlen(text_buffer), "sd:/switch/partialaes.keys");
+
+    if (strlen(text_buffer) == 0) {
+        EPRINTF("Failed to dump partial keys.");
+        return;
+    }
+
+    FIL fp;
+    u32 res = 0;
+    BYTE mode = FA_WRITE;
+
+    if (append) {
+        mode |= FA_OPEN_APPEND;
+    } else {
+        mode |= FA_CREATE_ALWAYS;
+    }
+
+    res = f_open(&fp, "sd:/switch/partialaes.keys", mode);
+    if (res) {
+        EPRINTF("Unable to write partial keys to SD.");
+        return;
+    }
+
+    f_write(&fp, text_buffer, strlen(text_buffer), NULL);
+    f_close(&fp);
+
     gfx_printf("%kWrote partials to sd:/switch/partialaes.keys\n", colors[(color_idx++) % 6]);
+
+    free(text_buffer);
 }
 
 static void _save_keys_to_sd(key_derivation_ctx_t *keys, titlekey_buffer_t *titlekey_buffer, const pkg1_id_t *pkg1_id, u32 start_whole_operation_time, u32 derivable_key_count) {
@@ -797,8 +844,7 @@ static void _save_keys_to_sd(key_derivation_ctx_t *keys, titlekey_buffer_t *titl
         EPRINTF("Unable to save keys to SD.");
 
     if (h_cfg.t210b01) {
-        memset(text_buffer, 0, text_buffer_size);
-        _save_mariko_partial_keys(text_buffer);
+        _save_mariko_partial_keys(12, 4, true);
     }
 
     if (_titlekey_count == 0) {
@@ -836,8 +882,16 @@ static bool _check_keyslot_access() {
 }
 
 static void _derive_keys() {
+    if (!f_stat("sd:/switch/partialaes.keys", NULL)) {
+        f_unlink("sd:/switch/partialaes.keys");
+    }
+
+    if (h_cfg.t210b01) {
+        _save_mariko_partial_keys(0, 12, false);
+    }
+
     if (!_check_keyslot_access()) {
-        EPRINTF("Unable to set crypto keyslots!\nTry launching payload differently\n or flash Spacecraft-NX if using a modchip!");
+        EPRINTF("Unable to set crypto keyslots!\nTry launching payload differently\n or flash Spacecraft-NX if using a modchip.");
         return;
     }
 
