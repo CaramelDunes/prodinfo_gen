@@ -24,7 +24,7 @@
 
 typedef struct _tsec_ctxt_t
 {
-	void *fw;
+	const void *fw;
 	u32 size;
 	void *pkg1;
 } tsec_ctxt_t;
@@ -47,5 +47,6 @@ typedef struct _tsec_key_data_t
 } tsec_key_data_t;
 
 int tsec_query(u8 *tsec_keys, u8 kb, tsec_ctxt_t *tsec_ctxt);
+int tsec_run_fw(tsec_ctxt_t *tsec_ctxt);
 
 #endif

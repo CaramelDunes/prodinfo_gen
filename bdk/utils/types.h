@@ -83,7 +83,6 @@ typedef int bool;
 #define BOOT_CFG_FROM_LAUNCH BIT(1)
 #define BOOT_CFG_FROM_ID     BIT(2)
 #define BOOT_CFG_TO_EMUMMC   BIT(3)
-#define BOOT_CFG_SEPT_RUN    BIT(7)
 
 #define EXTRA_CFG_DUMP_EMUMMC BIT(0)
 

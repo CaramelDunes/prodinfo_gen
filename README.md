@@ -9,7 +9,7 @@ Usage
 * It is highly recommended, but not required, to place Minerva on SD from the latest [Hekate](https://github.com/CTCaer/hekate/releases) for best performance, especially while dumping titlekeys - the file and path is `/bootloader/sys/libsys_minerva.bso`
 * Launch Lockpick_RCM.bin using your favorite payload injector or chainloader
 * Upon completion, keys will be saved to `/switch/prod.keys` and titlekeys to `/switch/title.keys` on SD
-* If the console has Firmware 7.x or higher, the `/sept/` folder from [Atmosphère](https://github.com/Atmosphere-NX/Atmosphere/releases) or [Kosmos](https://github.com/AtlasNX/Kosmos/releases) release zip must be present on SD or else only keyblob master key derivation is possible (ie. up to `master_key_05` only)
+* This release bundles the Falcon keygen from [Atmosphère-NX](https://github.com/Atmosphere-NX/Atmosphere)
 
 Mariko-Specific Keys
 =

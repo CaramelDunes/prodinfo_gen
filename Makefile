@@ -16,9 +16,12 @@ include ./Versions.inc
 TARGET := Lockpick_RCM
 BUILDDIR := build
 OUTPUTDIR := output
-SOURCEDIR = source
+SOURCEDIR := source
 BDKDIR := bdk
 BDKINC := -I./$(BDKDIR)
+KEYGENDIR := keygen
+KEYGEN := tsec_keygen
+KEYGENH := tsec_keygen.h
 VPATH = $(dir ./$(SOURCEDIR)/) $(dir $(wildcard ./$(SOURCEDIR)/*/)) $(dir $(wildcard ./$(SOURCEDIR)/*/*/))
 VPATH += $(dir $(wildcard ./$(BDKDIR)/)) $(dir $(wildcard ./$(BDKDIR)/*/)) $(dir $(wildcard ./$(BDKDIR)/*/*/))
 
@@ -99,6 +102,11 @@ $(OUTPUTDIR)/$(TARGET).bin: $(BUILDDIR)/$(TARGET)/$(TARGET).elf $(TOOLS)
 $(BUILDDIR)/$(TARGET)/$(TARGET).elf: $(OBJS)
 	@$(CC) $(LDFLAGS) -T $(SOURCEDIR)/link.ld $^ -o $@
 	@echo "Lockpick_RCM was built with the following flags:\nCFLAGS:  "$(CFLAGS)"\nLDFLAGS: "$(LDFLAGS)
+
+$(OBJS): | $(KEYGENDIR)
+
+$(KEYGENDIR): $(TOOLS)
+	@cd $(KEYGENDIR) && ../$(TOOLSB2C)/bin2c $(KEYGEN) > $(KEYGENH)
 
 $(BUILDDIR)/$(TARGET)/%.o: $(SOURCEDIR)/%.c
 	@mkdir -p "$(@D)"

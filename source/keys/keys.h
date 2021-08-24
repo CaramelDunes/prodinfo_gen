@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020 shchmue
+ * Copyright (c) 2019-2021 shchmue
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -108,7 +108,9 @@ typedef struct {
         master_key[KB_FIRMWARE_VERSION_MAX + 1][AES_128_KEY_SIZE],
         package2_key[KB_FIRMWARE_VERSION_MAX + 1][AES_128_KEY_SIZE],
         titlekek[KB_FIRMWARE_VERSION_MAX + 1][AES_128_KEY_SIZE],
-        tsec_keys[AES_128_KEY_SIZE * 2];
+        tsec_key[AES_128_KEY_SIZE],
+        tsec_root_key[AES_128_KEY_SIZE],
+        tsec_root_key_dev[AES_128_KEY_SIZE];
     u32 sbk[4];
     keyblob_t keyblob[KB_FIRMWARE_VERSION_600 + 1];
 } key_derivation_ctx_t;
@@ -137,9 +139,9 @@ typedef struct {
 // save key with different name than variable
 #define SAVE_KEY_VAR(name, varname) _save_key(#name, varname, sizeof(varname), text_buffer)
 // save key family wrapper
-#define SAVE_KEY_FAMILY(name, start) _save_key_family(#name, name, start, sizeof(name) / sizeof(name[0]), sizeof(name[0]), text_buffer)
+#define SAVE_KEY_FAMILY(name, start) _save_key_family(#name, name, start, ARRAY_SIZE(name), sizeof(*(name)), text_buffer)
 // save key family with different name than variable
-#define SAVE_KEY_FAMILY_VAR(name, varname, start) _save_key_family(#name, varname, start, sizeof(varname) / sizeof(varname[0]), sizeof(varname[0]), text_buffer)
+#define SAVE_KEY_FAMILY_VAR(name, varname, start) _save_key_family(#name, varname, start, ARRAY_SIZE(varname), sizeof(*(varname)), text_buffer)
 
 void dump_keys();
 

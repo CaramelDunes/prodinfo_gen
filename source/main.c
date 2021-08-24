@@ -395,15 +395,6 @@ void ipl_main()
 	h_cfg.emummc_force_disable = emu_cfg.sector == 0 && !emu_cfg.path;
 	emu_cfg.enabled = !h_cfg.emummc_force_disable;
 
-	if (b_cfg.boot_cfg & BOOT_CFG_SEPT_RUN)
-	{
-		if (!(b_cfg.extra_cfg & EXTRA_CFG_DUMP_EMUMMC)) {
-			h_cfg.emummc_force_disable = true;
-			emu_cfg.enabled = false;
-		}
-		dump_keys();
-	}
-
 	// Grey out emummc option if not present.
 	if (h_cfg.emummc_force_disable)
 	{

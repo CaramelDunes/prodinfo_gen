@@ -253,9 +253,8 @@ static void _config_se_brom()
 	// Enable fuse clock.
 	clock_enable_fuse(true);
 
-	// Skip SBK/SSK if sept was run.
-	bool sbk_skip = b_cfg.boot_cfg & BOOT_CFG_SEPT_RUN || FUSE(FUSE_PRIVATE_KEY0) == 0xFFFFFFFF;
-	if (!sbk_skip)
+	// Skip SBK/SSK if running on patched Erista.
+	if (!(FUSE(FUSE_PRIVATE_KEY0) == 0xFFFFFFFF))
 	{
 		// Bootrom part we skipped.
 		u32 sbk[4] = {
