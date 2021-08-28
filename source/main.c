@@ -23,7 +23,6 @@
 #include <display/di.h>
 #include <gfx_utils.h>
 #include "gfx/tui.h"
-#include "hos/pkg1.h"
 #include <libs/fatfs/ff.h>
 #include <mem/heap.h>
 #include <mem/minerva.h>
@@ -300,8 +299,8 @@ power_state_t STATE_REBOOT_RCM          = REBOOT_RCM;
 power_state_t STATE_REBOOT_BYPASS_FUSES = REBOOT_BYPASS_FUSES;
 
 ment_t ment_top[] = {
-	MDEF_HANDLER("Dump from SysNAND | Key generation: unk", dump_sysnand, COLOR_RED),
-	MDEF_HANDLER("Dump from EmuNAND | Key generation: unk", dump_emunand, COLOR_ORANGE),
+	MDEF_HANDLER("Dump from SysNAND", dump_sysnand, COLOR_RED),
+	MDEF_HANDLER("Dump from EmuNAND", dump_emunand, COLOR_ORANGE),
 	MDEF_CAPTION("---------------", COLOR_YELLOW),
 	MDEF_HANDLER("Payloads...", launch_tools, COLOR_GREEN),
 	MDEF_CAPTION("---------------", COLOR_BLUE),
@@ -312,42 +311,6 @@ ment_t ment_top[] = {
 };
 
 menu_t menu_top = { ment_top, NULL, 0, 0 };
-
-void _get_key_generations(char *sysnand_label, char *emunand_label)
-{
-	sdmmc_t sdmmc;
-	sdmmc_storage_t storage;
-	sdmmc_storage_init_mmc(&storage, &sdmmc, SDMMC_BUS_WIDTH_8, SDHCI_TIMING_MMC_HS400);
-	u8 *pkg1 = (u8 *)malloc(PKG1_MAX_SIZE);
-	sdmmc_storage_set_mmc_partition(&storage, EMMC_BOOT0);
-	sdmmc_storage_read(&storage, PKG1_OFFSET / NX_EMMC_BLOCKSIZE, PKG1_MAX_SIZE / NX_EMMC_BLOCKSIZE, pkg1);
-	sdmmc_storage_end(&storage);
-
-	u32 pk1_offset = h_cfg.t210b01 ? sizeof(bl_hdr_t210b01_t) : 0; // Skip T210B01 OEM header.
-	const pkg1_id_t *pkg1_id = pkg1_identify(pkg1 + pk1_offset);
-	if (pkg1_id) {
-		s_printf(sysnand_label + 36, "% 3d", pkg1_id->kb);
-		ment_top[0].caption = sysnand_label;
-		if (h_cfg.emummc_force_disable)
-		{
-			free(pkg1);
-			return;
-		}
-	}
-
-	emummc_storage_init_mmc();
-	memset(pkg1, 0, PKG1_MAX_SIZE);
-	emummc_storage_set_mmc_partition(EMMC_BOOT0);
-	emummc_storage_read(PKG1_OFFSET / NX_EMMC_BLOCKSIZE, PKG1_MAX_SIZE / NX_EMMC_BLOCKSIZE, pkg1);
-	emummc_storage_end();
-
-	pkg1_id = pkg1_identify(pkg1 + pk1_offset);
-	if (pkg1_id) {
-		s_printf(emunand_label + 36, "% 3d", pkg1_id->kb);
-		free(pkg1);
-		ment_top[1].caption = emunand_label;
-	}
-}
 
 extern void pivot_stack(u32 stack_top);
 
@@ -416,9 +379,6 @@ void ipl_main()
 	{
 		ment_top[6].data = &STATE_REBOOT_FULL;
 	}
-
-	// Update key generations listed in menu.
-	_get_key_generations((char *)ment_top[0].caption, (char *)ment_top[1].caption);
 
 	while (true)
 		tui_do_menu(&menu_top);

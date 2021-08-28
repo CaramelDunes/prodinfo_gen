@@ -18,6 +18,8 @@
 #ifndef _HOS_H_
 #define _HOS_H_
 
+#define KEYBLOB_OFFSET 0x180000
+
 #define KB_FIRMWARE_VERSION_100  0
 #define KB_FIRMWARE_VERSION_300  1
 #define KB_FIRMWARE_VERSION_301  2

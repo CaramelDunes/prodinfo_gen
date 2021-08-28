@@ -22,7 +22,7 @@
 #include <display/di.h>
 #include <gfx_utils.h>
 #include "../gfx/tui.h"
-#include "../hos/pkg1.h"
+#include "../hos/hos.h"
 #include <libs/fatfs/ff.h>
 #include <libs/nx_savedata/save.h>
 #include <mem/heap.h>
@@ -77,35 +77,6 @@ static void _generate_specific_aes_key(u32 ks, key_derivation_ctx_t *keys, void 
 static void _get_device_key(u32 ks, key_derivation_ctx_t *keys, void *out_device_key, u32 revision);
 // titlekey functions
 static bool _test_key_pair(const void *E, const void *D, const void *N);
-
-static u8 *_read_pkg1(const pkg1_id_t **pkg1_id) {
-    if (emummc_storage_init_mmc()) {
-        EPRINTF("Unable to init MMC.");
-        return NULL;
-    }
-    TPRINTFARGS("%kMMC init...     ", colors[(color_idx++) % 6]);
-
-    // Read package1.
-    u8 *pkg1 = (u8 *)malloc(PKG1_MAX_SIZE);
-    if (!emummc_storage_set_mmc_partition(EMMC_BOOT0)) {
-        EPRINTF("Unable to set partition.");
-        return NULL;
-    }
-    if (!emummc_storage_read(PKG1_OFFSET / NX_EMMC_BLOCKSIZE, PKG1_MAX_SIZE / NX_EMMC_BLOCKSIZE, pkg1)) {
-        EPRINTF("Unable to read pkg1.");
-        return NULL;
-    }
-
-    u32 pk1_offset = h_cfg.t210b01 ? sizeof(bl_hdr_t210b01_t) : 0; // Skip T210B01 OEM header.
-    *pkg1_id = pkg1_identify(pkg1 + pk1_offset);
-    if (!*pkg1_id) {
-        EPRINTF("Unknown pkg1 version.\n Make sure you have the latest Lockpick_RCM.\n If a new firmware version just came out,\n Lockpick_RCM must be updated.\n Check Github for new release.");
-        gfx_hexdump(0, pkg1, 0x20);
-        return NULL;
-    }
-
-    return pkg1;
-}
 
 static void _derive_master_key_mariko(key_derivation_ctx_t *keys, bool is_dev) {
     // Relies on the SBK being properly set in slot 14
@@ -791,12 +762,16 @@ static void _derive_keys() {
 
     u32 start_whole_operation_time = get_tmr_us();
 
-    const pkg1_id_t *pkg1_id;
-    u8 *pkg1 = _read_pkg1(&pkg1_id);
-    if (!pkg1) {
+    if (emummc_storage_init_mmc()) {
+        EPRINTF("Unable to init MMC.");
         return;
     }
-    free(pkg1);
+    TPRINTFARGS("%kMMC init...     ", colors[(color_idx++) % 6]);
+
+    if (!emummc_storage_set_mmc_partition(EMMC_BOOT0)) {
+        EPRINTF("Unable to set partition.");
+        return;
+    }
 
     bool is_dev = fuse_read_hw_state() == FUSE_NX_HW_STATE_DEV;
 
