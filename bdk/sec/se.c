@@ -255,7 +255,7 @@ int se_rsa_exp_mod(u32 ks, void *dst, u32 dst_size, const void *src, u32 src_siz
 	// Copy output hash.
 	u32 *dst32 = (u32 *)dst;
 	for (u32 i = 0; i < dst_size / 4; i++)
-		dst32[dst_size / 4 - i - 1] = byte_swap_32(SE(SE_RSA_OUTPUT_REG + (i << 2)));
+		dst32[dst_size / 4 - i - 1] = byte_swap_32(SE(SE_RSA_OUTPUT_REG + (i * 4)));
 
 	return res;
 }
@@ -485,7 +485,7 @@ int se_aes_xts_crypt_sec(u32 tweak_ks, u32 crypt_ks, u32 enc, u64 sec, void *dst
 		tweak[i] = sec & 0xFF;
 		sec >>= 8;
 	}
-	if (!se_aes_crypt_block_ecb(tweak_ks, 1, tweak, tweak))
+	if (!se_aes_crypt_block_ecb(tweak_ks, ENCRYPT, tweak, tweak))
 		return 0;
 
 	memcpy(orig_tweak, tweak, 0x10);
@@ -538,7 +538,7 @@ int se_aes_cmac(u32 ks, void *dst, u32 dst_size, const void *src, u32 src_size)
 	u8 *last_block = (u8 *)calloc(0x10, 1);
 
 	// generate derived key
-	if (!se_aes_crypt_block_ecb(ks, 1, key, key))
+	if (!se_aes_crypt_block_ecb(ks, ENCRYPT, key, key))
 		goto out;
 	_gf256_mul_x(key);
 	if (src_size & 0xF)
@@ -668,7 +668,7 @@ int se_calc_sha256_finalize(void *hash, u32 *msg_left)
 
 	// Copy output hash.
 	for (u32 i = 0; i < (SE_SHA_256_SIZE / 4); i++)
-		hash32[i] = byte_swap_32(SE(SE_HASH_RESULT_REG + (i << 2)));
+		hash32[i] = byte_swap_32(SE(SE_HASH_RESULT_REG + (i * 4)));
 	memcpy(hash, hash32, SE_SHA_256_SIZE);
 
 	return res;
@@ -841,6 +841,6 @@ void se_get_aes_keys(u8 *buf, u8 *keys, u32 keysize)
 	// Decrypt context.
 	se_aes_key_clear(3);
 	se_aes_key_set(3, srk, SE_KEY_128_SIZE);
-	se_aes_crypt_cbc(3, 0, keys, SE_AES_KEYSLOT_COUNT * keysize, keys, SE_AES_KEYSLOT_COUNT * keysize);
+	se_aes_crypt_cbc(3, DECRYPT, keys, SE_AES_KEYSLOT_COUNT * keysize, keys, SE_AES_KEYSLOT_COUNT * keysize);
 	se_aes_key_clear(3);
 }

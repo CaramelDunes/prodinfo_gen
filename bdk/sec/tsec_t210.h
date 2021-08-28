@@ -37,7 +37,6 @@
 #define  TSEC_IRQDEST_EXT(val)    (((val) & 0xFF) << 8)
 #define TSEC_CPUCTL       0x1100
 #define  TSEC_CPUCTL_STARTCPU     BIT(1)
-#define  TSEC_CPUCTL_KEYGEN_DONE  BIT(4)
 #define TSEC_BOOTVEC      0x1104
 #define TSEC_DMACTL       0x110C
 #define TSEC_DMATRFBASE   0x1110

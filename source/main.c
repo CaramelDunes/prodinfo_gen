@@ -23,6 +23,7 @@
 #include <display/di.h>
 #include <gfx_utils.h>
 #include "gfx/tui.h"
+#include "hos/pkg1.h"
 #include <libs/fatfs/ff.h>
 #include <mem/heap.h>
 #include <mem/minerva.h>
