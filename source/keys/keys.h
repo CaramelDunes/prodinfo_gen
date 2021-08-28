@@ -109,8 +109,7 @@ typedef struct {
         package2_key[KB_FIRMWARE_VERSION_MAX + 1][AES_128_KEY_SIZE],
         titlekek[KB_FIRMWARE_VERSION_MAX + 1][AES_128_KEY_SIZE],
         tsec_key[AES_128_KEY_SIZE],
-        tsec_root_key[AES_128_KEY_SIZE],
-        tsec_root_key_dev[AES_128_KEY_SIZE];
+        tsec_root_key[AES_128_KEY_SIZE];
     u32 sbk[4];
     keyblob_t keyblob[KB_FIRMWARE_VERSION_600 + 1];
 } key_derivation_ctx_t;
