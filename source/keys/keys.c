@@ -131,8 +131,8 @@ static void _derive_master_keys_from_latest_key(key_derivation_ctx_t *keys, bool
 
 static void _derive_keyblob_keys(key_derivation_ctx_t *keys) {
     u8 *keyblob_block = (u8 *)calloc(KB_FIRMWARE_VERSION_600 + 1, NX_EMMC_BLOCKSIZE);
-    encrypted_keyblob_t *current_keyblob = (encrypted_keyblob_t *)keyblob_block;
     u32 keyblob_mac[AES_128_KEY_SIZE / 4] = {0};
+    bool have_keyblobs = true;
 
     if (FUSE(FUSE_PRIVATE_KEY0) == 0xFFFFFFFF) {
         u8 *aes_keys = (u8 *)calloc(0x1000, 1);
@@ -146,10 +146,16 @@ static void _derive_keyblob_keys(key_derivation_ctx_t *keys) {
         keys->sbk[3] = FUSE(FUSE_PRIVATE_KEY3);
     }
 
-    if (!emummc_storage_read(KEYBLOB_OFFSET / NX_EMMC_BLOCKSIZE, KB_FIRMWARE_VERSION_600 + 1, keyblob_block)) {
+    if (!emmc_storage.initialized) {
+        have_keyblobs = false;
+    } else if (!emummc_storage_read(KEYBLOB_OFFSET / NX_EMMC_BLOCKSIZE, KB_FIRMWARE_VERSION_600 + 1, keyblob_block)) {
         EPRINTF("Unable to read keyblobs.");
+        have_keyblobs = false;
+    } else {
+        have_keyblobs = true;
     }
 
+    encrypted_keyblob_t *current_keyblob = (encrypted_keyblob_t *)keyblob_block;
     for (u32 i = 0; i <= KB_FIRMWARE_VERSION_600; i++, current_keyblob++) {
         minerva_periodic_training();
         se_aes_crypt_block_ecb(12, DECRYPT, keys->keyblob_key[i], keyblob_key_sources[i]); // temp = unwrap(kbks, tsec)
@@ -159,6 +165,10 @@ static void _derive_keyblob_keys(key_derivation_ctx_t *keys) {
         if (i == 0) {
             se_aes_crypt_block_ecb(7, DECRYPT, keys->device_key, per_console_key_source); // devkey = unwrap(pcks, kbk0)
             se_aes_crypt_block_ecb(7, DECRYPT, keys->device_key_4x, device_master_key_source_kek_source);
+        }
+
+        if (!have_keyblobs) {
+            continue;
         }
 
         // verify keyblob is not corrupt
@@ -547,7 +557,7 @@ static void _save_mariko_partial_keys(u32 start, u32 count, bool append) {
     }
 
     u32 pos = 0;
-    u32 zeros[4] = {0};
+    u32 zeros[AES_128_KEY_SIZE / 4] = {0};
     u8 *data = malloc(4 * AES_128_KEY_SIZE);
     char *text_buffer = calloc(1, 0x100 * count);
 
@@ -768,13 +778,13 @@ static void _derive_keys() {
 
     if (emummc_storage_init_mmc()) {
         EPRINTF("Unable to init MMC.");
-        return;
+    } else {
+        TPRINTFARGS("%kMMC init...     ", colors[(color_idx++) % 6]);
     }
-    TPRINTFARGS("%kMMC init...     ", colors[(color_idx++) % 6]);
 
-    if (!emummc_storage_set_mmc_partition(EMMC_BOOT0)) {
+    if (emmc_storage.initialized && !emummc_storage_set_mmc_partition(EMMC_BOOT0)) {
         EPRINTF("Unable to set partition.");
-        return;
+        emummc_storage_end();
     }
 
     bool is_dev = fuse_read_hw_state() == FUSE_NX_HW_STATE_DEV;
@@ -821,7 +831,9 @@ static void _derive_keys() {
     titlekey_buffer_t *titlekey_buffer = (titlekey_buffer_t *)TITLEKEY_BUF_ADR;
 
     // Requires BIS key for SYSTEM partition
-    if (_key_exists(keys->bis_key[2])) {
+    if (!emmc_storage.initialized) {
+        EPRINTF("eMMC not initialized.\nSkipping SD seed and titlekeys.");
+    } else if (_key_exists(keys->bis_key[2])) {
         _derive_emmc_keys(keys, titlekey_buffer);
     } else {
         EPRINTF("Missing needed BIS keys.\nSkipping SD seed and titlekeys.");
@@ -861,7 +873,9 @@ void dump_keys() {
     // Ignore whether emummc is enabled.
     h_cfg.emummc_force_disable = emu_cfg.sector == 0 && !emu_cfg.path;
     emu_cfg.enabled = !h_cfg.emummc_force_disable;
-    emummc_storage_end(&emmc_storage);
+    if (emmc_storage.initialized) {
+        emummc_storage_end();
+    }
     gfx_printf("\n%kPress a button to return to the menu.", colors[(color_idx) % 6], colors[(color_idx + 1) % 6], colors[(color_idx + 2) % 6]);
     btn_wait();
     gfx_clear_grey(0x1B);
