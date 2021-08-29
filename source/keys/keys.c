@@ -81,9 +81,13 @@ static bool _test_key_pair(const void *E, const void *D, const void *N);
 static void _derive_master_key_mariko(key_derivation_ctx_t *keys, bool is_dev) {
     // Relies on the SBK being properly set in slot 14
     se_aes_crypt_block_ecb(14, DECRYPT, keys->device_key_4x, device_master_key_source_kek_source);
-    // Relies on the Mariko KEK being properly set in slot 12
-    se_aes_unwrap_key(8, 12, is_dev ? &mariko_master_kek_sources_dev[KB_FIRMWARE_VERSION_MAX - KB_FIRMWARE_VERSION_600] : &mariko_master_kek_sources[KB_FIRMWARE_VERSION_MAX - KB_FIRMWARE_VERSION_600]);
-    se_aes_crypt_block_ecb(8, DECRYPT, keys->master_key[KB_FIRMWARE_VERSION_MAX], master_key_source);
+    // Derive all master keys based on Mariko KEK
+    for (u32 i = KB_FIRMWARE_VERSION_600; i < ARRAY_SIZE(mariko_master_kek_sources) + KB_FIRMWARE_VERSION_600; i++) {
+        // Relies on the Mariko KEK being properly set in slot 12
+        se_aes_crypt_block_ecb(12, DECRYPT, keys->master_kek[i], is_dev ? &mariko_master_kek_sources_dev[i - KB_FIRMWARE_VERSION_600] : &mariko_master_kek_sources[i - KB_FIRMWARE_VERSION_600]); // mkek = unwrap(mariko_kek, mariko_kek_source)
+        se_aes_key_set(8, keys->master_kek[i], AES_128_KEY_SIZE); // mkey = unwrap(mkek, mkeys)
+        se_aes_crypt_block_ecb(8, DECRYPT, keys->master_key[i], master_key_source);
+    }
 }
 
 static int _run_ams_keygen(key_derivation_ctx_t *keys) {
@@ -226,7 +230,7 @@ static void _derive_misc_keys(key_derivation_ctx_t *keys, bool is_dev) {
     }
 }
 
-static void _derive_master_key_per_generation_keys(key_derivation_ctx_t *keys) {
+static void _derive_per_generation_keys(key_derivation_ctx_t *keys) {
     for (u32 i = 0; i < KB_FIRMWARE_VERSION_MAX + 1; i++) {
         if (!_key_exists(keys->master_key[i]))
             continue;
@@ -811,12 +815,12 @@ static void _derive_keys() {
 
     _derive_non_unique_keys(&prod_keys, is_dev);
     _derive_non_unique_keys(&dev_keys, is_dev);
-    _derive_master_key_per_generation_keys(&prod_keys);
-    _derive_master_key_per_generation_keys(&dev_keys);
+    _derive_per_generation_keys(&prod_keys);
+    _derive_per_generation_keys(&dev_keys);
 
     titlekey_buffer_t *titlekey_buffer = (titlekey_buffer_t *)TITLEKEY_BUF_ADR;
 
-    // BIS key for SYSTEM partition
+    // Requires BIS key for SYSTEM partition
     if (_key_exists(keys->bis_key[2])) {
         _derive_emmc_keys(keys, titlekey_buffer);
     } else {
@@ -825,9 +829,16 @@ static void _derive_keys() {
 
     end_time = get_tmr_us();
     gfx_printf("%kLockpick totally done in %d us\n", colors[(color_idx++) % 6], end_time - start_whole_operation_time);
-    _save_keys_to_sd(&prod_keys, titlekey_buffer, false);
-    _key_count = 0;
-    _save_keys_to_sd(&dev_keys, NULL, true);
+
+    if (h_cfg.t210b01) {
+        // On Mariko, save only relevant key set
+        _save_keys_to_sd(keys, titlekey_buffer, is_dev);
+    } else {
+        // On Erista, save both prod and dev key sets
+        _save_keys_to_sd(&prod_keys, titlekey_buffer, false);
+        _key_count = 0;
+        _save_keys_to_sd(&dev_keys, NULL, true);
+    }
 }
 
 void dump_keys() {
