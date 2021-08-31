@@ -643,7 +643,7 @@ static void _save_keys_to_sd(key_derivation_ctx_t *keys, titlekey_buffer_t *titl
     SAVE_KEY(aes_key_generation_source);
     SAVE_KEY(bis_kek_source);
     SAVE_KEY_FAMILY_VAR(bis_key, keys->bis_key, 0);
-    SAVE_KEY_FAMILY(bis_key_sources, 0);
+    SAVE_KEY_FAMILY_VAR(bis_key_source, bis_key_sources, 0);
     SAVE_KEY_VAR(device_key, keys->device_key);
     SAVE_KEY_VAR(device_key_4x, keys->device_key_4x);
     SAVE_KEY_VAR(eticket_rsa_kek, keys->eticket_rsa_kek);
