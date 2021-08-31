@@ -95,13 +95,17 @@ static int _run_ams_keygen(key_derivation_ctx_t *keys) {
     tsec_ctxt.fw = tsec_keygen;
     tsec_ctxt.size = sizeof(tsec_keygen);
     tsec_ctxt.type = TSEC_FW_TYPE_NEW;
-    int res = tsec_query(keys->temp_key, &tsec_ctxt);
 
-    if (res) {
-        EPRINTFARGS("ERROR %d running keygen.\n", res);
+    u32 retries = 0;
+    while (tsec_query(keys->temp_key, &tsec_ctxt) < 0) {
+        retries++;
+        if (retries > 15) {
+            EPRINTF("Failed to run keygen.");
+            return -1;
+        }
     }
 
-    return res;
+    return 0;
 }
 
 static void _derive_master_keys_from_latest_key(key_derivation_ctx_t *keys, bool is_dev) {
@@ -799,7 +803,6 @@ static void _derive_keys() {
     } else {
         int res = _run_ams_keygen(keys);
         if (res) {
-            EPRINTF("Unable to run keygen.");
             return;
         }
 
