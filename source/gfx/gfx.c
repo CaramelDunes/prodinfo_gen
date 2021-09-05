@@ -224,7 +224,7 @@ void gfx_putc(char c)
 				cbuf++;
 			}
 			gfx_con.x += 16;
-			if (gfx_con.x >= gfx_ctxt.width - 16)
+			if (gfx_con.x > gfx_ctxt.width - 16)
 			{
 				gfx_con.x = 0;
 				gfx_con.y += 16;
@@ -233,7 +233,7 @@ void gfx_putc(char c)
 		else if (c == '\n')
 		{
 			gfx_con.x = 0;
-			gfx_con.y +=16;
+			gfx_con.y += 16;
 			if (gfx_con.y > gfx_ctxt.height - 16)
 				gfx_con.y = 0;
 		}
@@ -259,7 +259,7 @@ void gfx_putc(char c)
 				fb += gfx_ctxt.stride - 8;
 			}
 			gfx_con.x += 8;
-			if (gfx_con.x >= gfx_ctxt.width - 8)
+			if (gfx_con.x > gfx_ctxt.width - 8)
 			{
 				gfx_con.x = 0;
 				gfx_con.y += 8;

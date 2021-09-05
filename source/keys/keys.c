@@ -900,8 +900,18 @@ void dump_keys() {
     }
 
     minerva_change_freq(FREQ_800);
-    gfx_printf("\n%kPress a button to return to the menu.", colors[(color_idx) % 6], colors[(color_idx + 1) % 6], colors[(color_idx + 2) % 6]);
-    btn_wait();
+    gfx_printf("\n%kPress VOL+ to save a screenshot\n or another button to return to the menu.\n\n", colors[(color_idx++) % 6]);
+    u8 btn = btn_wait();
+    if (btn == BTN_VOL_UP) {
+        int res = save_fb_to_bmp();
+        if (!res) {
+            gfx_printf("%kScreenshot sd:/switch/lockpick_rcm.bmp saved.", colors[(color_idx++) % 6]);
+        } else {
+            EPRINTF("Screenshot failed.");
+        }
+        gfx_printf("\n%kPress a button to return to the menu.", colors[(color_idx++) % 6]);
+        btn_wait();
+    }
     gfx_clear_grey(0x1B);
 }
 
