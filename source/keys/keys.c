@@ -20,6 +20,7 @@
 
 #include "../config.h"
 #include <display/di.h>
+#include "../frontend/gui.h"
 #include <gfx_utils.h>
 #include "../gfx/tui.h"
 #include "../hos/hos.h"
@@ -570,6 +571,7 @@ static void _save_mariko_partial_keys(u32 start, u32 count, bool append) {
         if (ks < ARRAY_SIZE(mariko_key_vectors)) {
             se_aes_crypt_block_ecb(ks, DECRYPT, &data[0], mariko_key_vectors[ks]);
             if (_key_exists(data)) {
+                EPRINTFARGS("Failed to validate keyslot %d.", ks);
                 continue;
             }
         }
@@ -587,6 +589,7 @@ static void _save_mariko_partial_keys(u32 start, u32 count, bool append) {
 
         // Skip saving key if two results are the same indicating unsuccessful overwrite or empty slot
         if (memcmp(&data[0], &data[SE_KEY_128_SIZE], AES_128_KEY_SIZE) == 0) {
+            EPRINTFARGS("Failed to overwrite keyslot %d.", ks);
             continue;
         }
 
@@ -601,7 +604,7 @@ static void _save_mariko_partial_keys(u32 start, u32 count, bool append) {
     free(data);
 
     if (strlen(text_buffer) == 0) {
-        EPRINTF("Failed to dump partial keys.");
+        EPRINTFARGS("Failed to dump partial keys %d-%d.", start, start + count - 1);
         return;
     }
 
