@@ -769,9 +769,13 @@ static void _derive_keys() {
         f_unlink("sd:/switch/partialaes.keys");
     }
 
+    minerva_periodic_training();
+
     if (h_cfg.t210b01) {
         _save_mariko_partial_keys(0, 12, false);
     }
+
+    minerva_periodic_training();
 
     if (!_check_keyslot_access()) {
         EPRINTF("Unable to set crypto keyslots!\nTry launching payload differently\n or flash Spacecraft-NX if using a modchip.");
@@ -786,6 +790,8 @@ static void _derive_keys() {
         TPRINTFARGS("%kMMC init...     ", colors[(color_idx++) % 6]);
     }
 
+    minerva_periodic_training();
+
     if (emmc_storage.initialized && !emummc_storage_set_mmc_partition(EMMC_BOOT0)) {
         EPRINTF("Unable to set partition.");
         emummc_storage_end();
@@ -799,6 +805,7 @@ static void _derive_keys() {
     // Master key derivation
     if (h_cfg.t210b01) {
         _derive_master_key_mariko(keys, is_dev);
+        minerva_periodic_training();
         _derive_master_keys_from_latest_key(keys, is_dev);
     } else {
         int res = _run_ams_keygen(keys);
@@ -814,7 +821,9 @@ static void _derive_keys() {
         free(aes_keys);
 
         _derive_master_keys_from_latest_key(&prod_keys, false);
+        minerva_periodic_training();
         _derive_master_keys_from_latest_key(&dev_keys, true);
+        minerva_periodic_training();
         _derive_keyblob_keys(keys);
     }
 
@@ -824,11 +833,16 @@ static void _derive_keys() {
 
     TPRINTFARGS("%kBIS keys...     ", colors[(color_idx++) % 6]);
 
+    minerva_periodic_training();
     _derive_misc_keys(keys, is_dev);
 
+    minerva_periodic_training();
     _derive_non_unique_keys(&prod_keys, is_dev);
+    minerva_periodic_training();
     _derive_non_unique_keys(&dev_keys, is_dev);
+    minerva_periodic_training();
     _derive_per_generation_keys(&prod_keys);
+    minerva_periodic_training();
     _derive_per_generation_keys(&dev_keys);
 
     titlekey_buffer_t *titlekey_buffer = (titlekey_buffer_t *)TITLEKEY_BUF_ADR;
@@ -857,6 +871,8 @@ static void _derive_keys() {
 }
 
 void dump_keys() {
+    minerva_change_freq(FREQ_1600);
+
     display_backlight_brightness(h_cfg.backlight, 1000);
     gfx_clear_grey(0x1B);
     gfx_con_setpos(0, 0);
@@ -879,6 +895,8 @@ void dump_keys() {
     if (emmc_storage.initialized) {
         emummc_storage_end();
     }
+
+    minerva_change_freq(FREQ_800);
     gfx_printf("\n%kPress a button to return to the menu.", colors[(color_idx) % 6], colors[(color_idx + 1) % 6], colors[(color_idx + 2) % 6]);
     btn_wait();
     gfx_clear_grey(0x1B);
