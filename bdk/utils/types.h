@@ -109,6 +109,14 @@ typedef struct __attribute__((__packed__)) _boot_cfg_t
 
 static_assert(sizeof(boot_cfg_t) == 0x84, "Boot CFG size is wrong!");
 
+typedef struct __attribute__((__packed__)) _ipl_ver_meta_t
+{
+	u32 magic;
+	u32 version;
+	u16 rsvd0;
+	u16 rsvd1;
+} ipl_ver_meta_t;
+
 typedef struct __attribute__((__packed__)) _reloc_meta_t
 {
 	u32 start;

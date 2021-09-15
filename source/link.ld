@@ -6,6 +6,7 @@ SECTIONS {
 	.text : {
 		*(.text._start);
 		KEEP(*(._boot_cfg));
+		KEEP(*(._ipl_version));
 		*(.text._irq_setup);
 		*(.text*);
 	}

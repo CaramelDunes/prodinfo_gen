@@ -7,7 +7,7 @@ include $(DEVKITARM)/base_rules
 ################################################################################
 
 LDR_LOAD_ADDR := 0x40007000
-IPL_MAGIC := 0x43544349 #"ICTC"
+MAGIC := 0x4B434F4C #"LOCK"
 include ../Versions.inc
 
 ################################################################################
@@ -26,8 +26,8 @@ OBJS = $(addprefix $(BUILDDIR)/$(TARGET)/, \
 
 ################################################################################
 
-CUSTOMDEFINES := -DBL_MAGIC=$(IPL_MAGIC)
-CUSTOMDEFINES += -DBL_VER_MJ=$(BLVERSION_MAJOR) -DBL_VER_MN=$(BLVERSION_MINOR) -DBL_VER_HF=$(BLVERSION_HOTFX) -DBL_RESERVED=$(BLVERSION_RSVD)
+CUSTOMDEFINES := -DLP_MAGIC=$(MAGIC)
+CUSTOMDEFINES += -DLP_VER_MJ=$(LPVERSION_MAJOR) -DLP_VER_MN=$(LPVERSION_MINOR) -DLP_VER_BF=$(LPVERSION_BUGFX) -DLP_RESERVED=$(LPVERSION_RSVD)
 
 #TODO: Considering reinstating some of these when pointer warnings have been fixed.
 WARNINGS := -Wall -Wno-array-bounds -Wno-stringop-overflow

@@ -46,6 +46,12 @@
 
 hekate_config h_cfg;
 boot_cfg_t __attribute__((section ("._boot_cfg"))) b_cfg;
+const volatile ipl_ver_meta_t __attribute__((section ("._ipl_version"))) ipl_ver = {
+	.magic = LP_MAGIC,
+	.version = (LP_VER_MJ + '0') | ((LP_VER_MN + '0') << 8) | ((LP_VER_BF + '0') << 16),
+	.rsvd0 = 0,
+	.rsvd1 = 0
+};
 
 volatile nyx_storage_t *nyx_str = (nyx_storage_t *)NYX_STORAGE_ADDR;
 
