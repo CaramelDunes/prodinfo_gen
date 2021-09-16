@@ -282,6 +282,12 @@ out:
 	btn_wait();
 }
 
+void launch_hekate()
+{
+	if (!f_stat("bootloader/update.bin", NULL))
+		launch_payload("bootloader/update.bin", false);
+}
+
 void dump_sysnand()
 {
 	h_cfg.emummc_force_disable = true;
@@ -309,10 +315,11 @@ ment_t ment_top[] = {
 	MDEF_HANDLER("Dump from EmuNAND", dump_emunand, COLOR_ORANGE),
 	MDEF_CAPTION("---------------", COLOR_YELLOW),
 	MDEF_HANDLER("Payloads...", launch_tools, COLOR_GREEN),
-	MDEF_CAPTION("---------------", COLOR_BLUE),
-	MDEF_HANDLER_EX("Reboot (OFW)", &STATE_REBOOT_BYPASS_FUSES, power_set_state_ex, COLOR_VIOLET),
-	MDEF_HANDLER_EX("Reboot (RCM)", &STATE_REBOOT_RCM, power_set_state_ex, COLOR_RED),
-	MDEF_HANDLER_EX("Power off", &STATE_POWER_OFF, power_set_state_ex, COLOR_ORANGE),
+	MDEF_HANDLER("Reboot to Hekate", launch_hekate, COLOR_BLUE),
+	MDEF_CAPTION("---------------", COLOR_VIOLET),
+	MDEF_HANDLER_EX("Reboot (OFW)", &STATE_REBOOT_BYPASS_FUSES, power_set_state_ex, COLOR_RED),
+	MDEF_HANDLER_EX("Reboot (RCM)", &STATE_REBOOT_RCM, power_set_state_ex, COLOR_ORANGE),
+	MDEF_HANDLER_EX("Power off", &STATE_POWER_OFF, power_set_state_ex, COLOR_YELLOW),
 	MDEF_END()
 };
 
@@ -375,14 +382,22 @@ void ipl_main()
 	// Grey out reboot to RCM option if on Mariko or patched console.
 	if (h_cfg.t210b01 || h_cfg.rcm_patched)
 	{
-		ment_top[6].type = MENT_CAPTION;
-		ment_top[6].color = 0xFF555555;
-		ment_top[6].handler = NULL;
+		ment_top[7].type = MENT_CAPTION;
+		ment_top[7].color = 0xFF555555;
+		ment_top[7].handler = NULL;
 	}
 
 	if (h_cfg.rcm_patched)
 	{
-		ment_top[6].data = &STATE_REBOOT_FULL;
+		ment_top[7].data = &STATE_REBOOT_FULL;
+	}
+
+	// Grey out reboot to Hekate option if no update.bin found.
+	if (f_stat("bootloader/update.bin", NULL))
+	{
+		ment_top[4].type = MENT_CAPTION;
+		ment_top[4].color = 0xFF555555;
+		ment_top[4].handler = NULL;
 	}
 
 	minerva_change_freq(FREQ_800);
