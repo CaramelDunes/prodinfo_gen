@@ -896,7 +896,7 @@ void dump_keys() {
     h_cfg.emummc_force_disable = emu_cfg.sector == 0 && !emu_cfg.path;
     emu_cfg.enabled = !h_cfg.emummc_force_disable;
     if (emmc_storage.initialized) {
-        emummc_storage_end();
+        sdmmc_storage_end(&emmc_storage);
     }
 
     minerva_change_freq(FREQ_800);

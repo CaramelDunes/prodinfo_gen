@@ -284,6 +284,7 @@ out:
 
 void launch_hekate()
 {
+	sd_mount();
 	if (!f_stat("bootloader/update.bin", NULL))
 		launch_payload("bootloader/update.bin", false);
 }
