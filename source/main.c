@@ -316,7 +316,7 @@ ment_t ment_top[] = {
 	MDEF_HANDLER("Dump from EmuNAND", dump_emunand, COLOR_ORANGE),
 	MDEF_CAPTION("---------------", COLOR_YELLOW),
 	MDEF_HANDLER("Payloads...", launch_tools, COLOR_GREEN),
-	MDEF_HANDLER("Reboot to Hekate", launch_hekate, COLOR_BLUE),
+	MDEF_HANDLER("Reboot to hekate", launch_hekate, COLOR_BLUE),
 	MDEF_CAPTION("---------------", COLOR_VIOLET),
 	MDEF_HANDLER_EX("Reboot (OFW)", &STATE_REBOOT_BYPASS_FUSES, power_set_state_ex, COLOR_RED),
 	MDEF_HANDLER_EX("Reboot (RCM)", &STATE_REBOOT_RCM, power_set_state_ex, COLOR_ORANGE),
@@ -393,7 +393,7 @@ void ipl_main()
 		ment_top[7].data = &STATE_REBOOT_FULL;
 	}
 
-	// Grey out reboot to Hekate option if no update.bin found.
+	// Grey out reboot to hekate option if no update.bin found.
 	if (f_stat("bootloader/update.bin", NULL))
 	{
 		ment_top[4].type = MENT_CAPTION;
