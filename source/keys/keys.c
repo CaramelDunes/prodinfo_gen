@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2019-2021 shchmue
+ * Copyright (c) 2021 CaramelDunes
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -860,7 +861,7 @@ static void _derive_keys() {
     }
 
     end_time = get_tmr_us();
-    gfx_printf("%kLockpick totally done in %d us\n", colors[(color_idx++) % 6], end_time - start_whole_operation_time);
+    gfx_printf("%kprodinfo_gen totally done in %d us\n", colors[(color_idx++) % 6], end_time - start_whole_operation_time);
 
     if (h_cfg.t210b01) {
         // On Mariko, save only relevant key set
@@ -880,7 +881,7 @@ void dump_keys() {
     gfx_clear_grey(0x1B);
     gfx_con_setpos(0, 0);
 
-    gfx_printf("[%kLo%kck%kpi%kck%k_R%kCM%k v%d.%d.%d%k]\n\n",
+    gfx_printf("[%kpr%kod%kin%kfo%k_g%ken%k v%d.%d.%d%k]\n\n",
         colors[0], colors[1], colors[2], colors[3], colors[4], colors[5], 0xFFFF00FF, LP_VER_MJ, LP_VER_MN, LP_VER_BF, 0xFFCCCCCC);
 
     _key_count = 0;
@@ -905,7 +906,7 @@ void dump_keys() {
     if (btn == BTN_VOL_UP) {
         int res = save_fb_to_bmp();
         if (!res) {
-            gfx_printf("%kScreenshot sd:/switch/lockpick_rcm.bmp saved.", colors[(color_idx++) % 6]);
+            gfx_printf("%kScreenshot sd:/switch/prodinfo_gen.bmp saved.", colors[(color_idx++) % 6]);
         } else {
             EPRINTF("Screenshot failed.");
         }

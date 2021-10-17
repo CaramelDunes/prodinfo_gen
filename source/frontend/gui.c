@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018-2021 CTCaer
+ * Copyright (c) 2021 CaramelDunes
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -82,7 +83,7 @@ int save_fb_to_bmp()
 
 	f_mkdir("sd:/switch");
 	
-	char path[0x80] = "sd:/switch/lockpick_rcm.bmp";
+	char path[0x80] = "sd:/switch/prodinfo_gen.bmp";
 
 	// Save screenshot and log.
 	int res = sd_save_to_file(bitmap, file_size, path);

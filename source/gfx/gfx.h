@@ -3,6 +3,7 @@
  * Copyright (c) 2018-2021 CTCaer
  * Copyright (c) 2019-2021 shchmue
  * Copyright (c) 2018 M4xw
+ * Copyright (c) 2021 CaramelDunes
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
