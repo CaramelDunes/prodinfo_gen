@@ -58,7 +58,7 @@ typedef struct imported_parts {
 } imported_parts_t;
 
 static void _build_cal0();
-static void _save_prodinfo_to_sd(u8* prodinfo_buffer, u32 prodinfo_size);
+static void _save_prodinfo_to_sd(u8* prodinfo_buffer, u32 prodinfo_size, bool is_from_donor);
 static bool _read_donor_prodinfo(imported_parts_t* output, const char* donor_prodinfo_filename, const read_keyset_t* donor_keyset, const key_derivation_ctx_t* keyset);
 
 extern hekate_config h_cfg;
@@ -118,7 +118,7 @@ void build_prodinfo(const char* optional_donor_filename) {
         _build_cal0(prodinfo_buffer, prodinfo_size, keyset.master_key[0]);
 
         gfx_printf("\n%kWriting output file...\n", colors[(color_idx++) % 6]);
-        _save_prodinfo_to_sd(prodinfo_buffer, prodinfo_size);
+        _save_prodinfo_to_sd(prodinfo_buffer, prodinfo_size, optional_donor_filename != NULL);
         
         free(prodinfo_buffer); 
     }
@@ -211,17 +211,21 @@ static void _build_cal0(u8* prodinfo_buffer, u32 prodinfo_size, u8 master_key_0[
         gfx_printf("%kSomething went wrong, writing output anyway...\n", colors[(color_idx++) % 6]);
 }
 
-static void _save_prodinfo_to_sd(u8* prodinfo_buffer, u32 prodinfo_size) {
+static void _save_prodinfo_to_sd(u8* prodinfo_buffer, u32 prodinfo_size, bool is_from_donor) {
     if (!sd_mount()) {
         EPRINTF("Unable to mount SD.");
         return;
     }
 
     f_mkdir("sd:/switch");
-    char prodinfo_path[] = "sd:/switch/generated_prodinfo_from_scratch.bin";
+    const char* prodinfo_path = "sd:/switch/generated_prodinfo_from_scratch.bin";
+
+    if (is_from_donor) {
+        prodinfo_path = "sd:/switch/generated_prodinfo_from_donor.bin";
+    }
 
     FILINFO fno;
-    if (!sd_save_to_file(prodinfo_buffer, prodinfo_size, prodinfo_path) && !f_stat(prodinfo_path, &fno)) {
+    if (sd_save_to_file(prodinfo_buffer, prodinfo_size, prodinfo_path) == FR_OK && f_stat(prodinfo_path, &fno) == FR_OK) {
         gfx_printf("%kWrote %d bytes to %s\n", colors[(color_idx++) % 6], (u32)fno.fsize, prodinfo_path);
     } else
         EPRINTF("Unable to save generated PRODINFO to SD.");
