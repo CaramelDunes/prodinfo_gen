@@ -106,5 +106,6 @@ int  fuse_read_ipatch(void (*ipatch)(u32 offset, u32 value));
 int  fuse_read_evp_thunk(u32 *iram_evp_thunks, u32 *iram_evp_thunks_len);
 void fuse_read_array(u32 *words);
 bool fuse_check_patched_rcm();
+u64 fuse_get_device_id();
 
 #endif
