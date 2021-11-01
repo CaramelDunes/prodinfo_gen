@@ -1,47 +1,46 @@
-Lockpick_RCM
-=
-Lockpick_RCM is a bare metal Nintendo Switch payload that derives encryption keys for use in Switch file handling software like hactool, hactoolnet/LibHac, ChoiDujour, etc. without booting Horizon OS.
+prodinfo_gen [![Build Status](https://api.cirrus-ci.com/github/CaramelDunes/prodinfo_gen.svg)](https://cirrus-ci.com/github/CaramelDunes/prodinfo_gen)
+============
+prodinfo_gen is a Nintendo Switch payload that can generate minimal, console-unique, PRODINFO files.
 
-Due to changes imposed by firmware 7.0.0, Lockpick homebrew can no longer derive the latest keys. In the boot-time environment however, there is no such limitation.
+It can either build one from scratch or import parts of a donor PRODINFO.
+
+It is primarily aimed at people without a backup of their PRODINFO or building a NAND from scratch.
+
+This tool is not meant to, and will not, unban a Switch console.
+
+Limitations
+===========
+
+Of course, as we do not have Nintendo's private keys, the generated files can't be perfect.
+
+Here's what works:
+
+|              | Booting | Homebrews | Amiibos | GameCards | Online |
+| ------------ | :-----: | :-------: | :-----: | :-------: | :----: |
+| from scratch | ✓ | ✓ | ✓ | | |
+| from donor   | ✓ | ✓ | ✓ | ✓ | |
+
+As such, a **"from scratch"** PRODINFO also acts as a more elaborate "Incognito". 
+
+**USE THIS TOOL AT YOUR OWN RISK, DO NOT OVERWRITE A FACTORY PRODINFO WITHOUT MAKING A BACKUP FIRST.**
 
 Usage
-=
-* It is highly recommended, but not required, to place Minerva on SD from the latest [Hekate](https://github.com/CTCaer/hekate/releases) for best performance, especially while dumping titlekeys - the file and path is `/bootloader/sys/libsys_minerva.bso`
-* Launch Lockpick_RCM.bin using your favorite payload injector or chainloader
-* Upon completion, keys will be saved to `/switch/prod.keys` and titlekeys to `/switch/title.keys` on SD
-* This release bundles the Falcon keygen from [Atmosphère-NX](https://github.com/Atmosphere-NX/Atmosphere)
-
-Mariko-Specific Keys
-=
-Mariko consoles have several unique keys and protected keyslots. To get your SBK or the Mariko specific keys, you will need to use the `/switch/partialaes.keys` file along with a brute forcing tool such as <https://files.sshnuke.net/PartialAesKeyCrack.zip>. The contents of this file are the keyslot number followed by the result of that keyslot encrypting 16 null bytes. With the tool linked above, enter them in sequence for a given keyslot you want the contents of, for example: `PartialAesKeyCrack.exe <num1> <num2> <num3> <num4>` with the `--numthreads=N` where N is the number of threads you can dedicate to the brute force.
-
-The keyslots are as follows, with names recognized by `hactool`:
-* 0-11 - `mariko_aes_class_key_xx` (this is not used by the Switch but is set by the bootrom; hactoolnet recognizes it but it serves no purpose)
-* 12 - `mariko_kek` (not unique - this is used for master key derivation)
-* 13 - `mariko_bek` (not unique - this is used for BCT and package1 decryption)
-* 14 - `secure_boot_key` (console unique - this isn't needed for further key derivation than what Lockpick_RCM does but might be nice to have for your records)
-* 15 - Secure storage key (console unique - this is not used on retail or dev consoles and not recognized by any tools)
-
-So if you want to brute force the `mariko_kek`, open your `partialaes.keys` and observe the numbers beneath keyslot 12. Here's an example with fake numbers:
-```
-12
-11111111111111111111111111111111 22222222222222222222222222222222 33333333333333333333333333333333 44444444444444444444444444444444
-```
-Then take those numbers and open a command prompt window at the location of the exe linked above and type:
-`PartialAesKeyCrack.exe 11111111111111111111111111111111 22222222222222222222222222222222 33333333333333333333333333333333 44444444444444444444444444444444` and if you're on a powerful enough multicore system, add ` --numthreads=[whatever number of threads]`, ideally not your system's maximum if it's, for example, an older laptop with a low-end dual core CPU. On a Ryzen 3900x with 24 threads this generates a lot of heat but finishes in about 45 seconds.
-
-These keys never change so a brute force need only be conducted once.
-
-This works due to the security engine immediately flushing writes to keyslots which can be written one 32-bit chunk at a time. See: <https://switchbrew.org/wiki/Switch_System_Flaws#Hardware>
+=====
+* If you want to use a donor PRODINFO, place it at `sd:/switch/donor_prodinfo.bin`. **Note:** If the donor is a patched or Mariko Switch, you will need to copy the *donor's* keys to `sd:/switch/donor.keys`.
+* Launch prodinfo_gen.bin using your favorite payload injector or chainloader.
+* You should find `sd:/switch/generated_prodinfo_from_scratch.bin` or `sd:/switch/generated_prodinfo_from_donor.bin` depending on what you selected.
+* You can now write that PRODINFO to your NAND using a tool such as HacDiskMount (*it is recommended to make a backup of the current PRODINFO first*).
 
 Building
-=
+========
 Install [devkitARM](https://devkitpro.org/) and run `make`.
 
-Massive Thanks to CTCaer!
-=
-This software is heavily based on [Hekate](https://github.com/CTCaer/hekate). Beyond that, CTCaer was exceptionally helpful in the development of this project, lending loads of advice, expertise, and humor.
+Credits
+=======
+ - This software is based on **shchmue**'s [**Lockpick_RCM**](https://github.com/shchmue/Lockpick_RCM).
+ - GCM encryption primitives from [**Atmosphère**](https://github.com/Atmosphere-NX/Atmosphere)
+ - Most of the reverse engineering work comes from [**shchmue**](https://github.com/shchmue), [**PabloZaiden**](https://github.com/PabloZaiden), [**SwitchBrew**](https://switchbrew.org/wiki/Calibration)
 
 License
-=
-This project is under the GPLv2 license. The Save processing module is adapted from [hactool](https://github.com/SciresM/hactool) code under ISC.
+=======
+This project is under the GPLv2 license.
