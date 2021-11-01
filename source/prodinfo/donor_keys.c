@@ -262,7 +262,6 @@ void extkeys_initialize_settings(read_keyset_t *keyset, char *filebuffer)
 bool read_keys(read_keyset_t *ks, const char* keyfile_path)
 {
     FILINFO fno;
-    f_mkdir("sd:/switch");
     if (f_stat(keyfile_path, &fno) || fno.fsize < 0x40 || fno.fsize > 0x003FBC00)
         return false;
 

@@ -258,7 +258,6 @@ static inline u32 _read_le_u32(const void *buffer, u32 offset)
 
 static bool _read_donor_prodinfo(imported_parts_t* output, const char* donor_prodinfo_filename, const read_keyset_t* donor_keyset, const key_derivation_ctx_t* keyset) {
     FILINFO fno;
-    f_mkdir("sd:/switch");
     if (f_stat(donor_prodinfo_filename, &fno)) {
         gfx_printf("Couldn't find donor PRODINFO at sd:/switch/donor_prodinfo.bin");
         return false;
