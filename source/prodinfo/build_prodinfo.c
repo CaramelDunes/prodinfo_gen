@@ -111,7 +111,7 @@ void build_prodinfo(const char* optional_donor_filename) {
                 memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(GameCardCertificate), imported_parts.gamecard_certificate, SIZE_OF_BLOCK(GameCardCertificate));
                                 
                 gfx_printf("%kImporting extended GameCard key\n\n", colors[(color_idx++) % 6]);
-                memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(ExtendedGameCardKey) + 10, imported_parts.extended_gamecard_key, SIZE_OF_BLOCK(ExtendedGameCardKey));
+                memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(ExtendedGameCardKey) + 0x10, imported_parts.extended_gamecard_key, SIZE_OF_BLOCK(ExtendedGameCardKey));
             }
         }
 
