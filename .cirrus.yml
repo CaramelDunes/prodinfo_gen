@@ -1,5 +1,5 @@
 container:
-  image: devkitpro/devkita64_devkitarm:latest
+  image: devkitpro/devkita64:latest
   
 payload_build_task:
   build_script: make
