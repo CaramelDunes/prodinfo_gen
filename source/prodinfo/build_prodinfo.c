@@ -97,9 +97,13 @@ void build_prodinfo(const char* optional_donor_filename) {
         u8 *prodinfo_buffer = calloc(prodinfo_size, 1);
 
         if (optional_donor_filename != NULL) {
-            imported_parts_t imported_parts = {0};
             read_keyset_t donor_keyset = {0};
-            read_keys(&donor_keyset, "sd:/switch/donor.keys");
+            bool read_keys_result = read_keys(&donor_keyset, "sd:/switch/donor.keys");
+            if (!read_keys_result) {
+                WPRINTF("Error parsing sd:/switch/donor.keys.");
+            }
+
+            imported_parts_t imported_parts = {0};
             bool import_result = _read_donor_prodinfo(&imported_parts, optional_donor_filename, &donor_keyset, &keyset);
 
             if (!import_result) {
