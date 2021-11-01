@@ -68,7 +68,8 @@ extern bool lock_sector_cache;
 extern u32 secindex;
 extern volatile nyx_storage_t *nyx_str;
 
-static u32 color_idx = 0;
+// Not static so that keys.c:dump_keys can use it.
+u32 color_idx = 0;
 static u32 start_time, end_time;
 
 void build_prodinfo(const char* optional_donor_filename) {
@@ -78,18 +79,19 @@ void build_prodinfo(const char* optional_donor_filename) {
     gfx_clear_grey(0x1B);
     gfx_con_setpos(0, 0);
 
-    gfx_printf("[%kpr%kod%kin%kfo%k_g%ken%k v%d.%d.%d%k]\n\n",
+    gfx_printf("[%kpr%kod%kin%kfo%k_g%ken%k v%d.%d.%d%k]\n\n\n",
         colors[0], colors[1], colors[2], colors[3], colors[4], colors[5], 0xFFFF00FF, LP_VER_MJ, LP_VER_MN, LP_VER_BF, 0xFFCCCCCC);
 
     color_idx = 0;
 
     start_time = get_tmr_us();
 
+    gfx_printf("%kDumping keys...\n", colors[(color_idx++) % 6]);
     key_derivation_ctx_t keyset = {0};
     dump_keys(&keyset);
 
     if (get_crc_16(keyset.master_key[0], 0x10) != 0x801B) {
-        gfx_printf("Couldn't get master_key_00 from sd:/switch/prod.keys\n", colors[(color_idx++) % 6]);
+        EPRINTF("Couldn't get master_key_00.\n");
     } else {
         u32 prodinfo_size = MAXIMUM_PRODINFO_SIZE;
         u8 *prodinfo_buffer = calloc(prodinfo_size, 1);
@@ -105,10 +107,10 @@ void build_prodinfo(const char* optional_donor_filename) {
                 memset(&imported_parts, 0, sizeof(imported_parts_t));   
             } else {
                 // We simply copy here. What should encrypted will be by _build_cal0.
-                gfx_printf("%kImporting GameCard certificate\n\n", colors[(color_idx++) % 6]);
+                gfx_printf("%kImporting GameCard certificate\n", colors[(color_idx++) % 6]);
                 memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(GameCardCertificate), imported_parts.gamecard_certificate, SIZE_OF_BLOCK(GameCardCertificate));
                                 
-                gfx_printf("%kImporting extended GameCard key\n", colors[(color_idx++) % 6]);
+                gfx_printf("%kImporting extended GameCard key\n\n", colors[(color_idx++) % 6]);
                 memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(ExtendedGameCardKey) + 10, imported_parts.extended_gamecard_key, SIZE_OF_BLOCK(ExtendedGameCardKey));
             }
         }
@@ -151,8 +153,7 @@ static void _build_cal0(u8* prodinfo_buffer, u32 prodinfo_size, u8 master_key_0[
     device_id_string(device_id_as_string);
 
     gfx_printf("%kYour device id: %s\n", colors[(color_idx++) % 6], device_id_as_string);
-
-    // gfx_printf("%kKeygen: = %d\n", colors[(color_idx++) % 6], fuse_read_odm_keygen_rev());
+    gfx_printf("%kkey generation: %d\n\n", colors[(color_idx++) % 6], fuse_read_odm_keygen_rev());
 
     gfx_printf("%kWriting header\n", colors[(color_idx++) % 6]);
     write_header(prodinfo_buffer);
@@ -259,15 +260,15 @@ static inline u32 _read_le_u32(const void *buffer, u32 offset)
 static bool _read_donor_prodinfo(imported_parts_t* output, const char* donor_prodinfo_filename, const read_keyset_t* donor_keyset, const key_derivation_ctx_t* keyset) {
     FILINFO fno;
     if (f_stat(donor_prodinfo_filename, &fno)) {
-        gfx_printf("Couldn't find donor PRODINFO at sd:/switch/donor_prodinfo.bin");
+        EPRINTF("Couldn't find donor PRODINFO at sd:/switch/donor_prodinfo.bin");
         return false;
     }
     else if (fno.fsize < MINIMUM_PRODINFO_SIZE) {
-        gfx_printf("Donor PRODINFO is too small! (%d < %d)", fno.fsize, MINIMUM_PRODINFO_SIZE);
+        EPRINTFARGS("Donor PRODINFO is too small! (%d < %d)", fno.fsize, MINIMUM_PRODINFO_SIZE);
         return false;
     }
     else if (fno.fsize > MAXIMUM_PRODINFO_SIZE) {
-        gfx_printf("Donor PRODINFO is too big! (%d > %d)", fno.fsize, MAXIMUM_PRODINFO_SIZE);
+        EPRINTFARGS("Donor PRODINFO is too big! (%d > %d)", fno.fsize, MAXIMUM_PRODINFO_SIZE);
         return false;
     }
 

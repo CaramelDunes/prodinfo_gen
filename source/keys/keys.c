@@ -53,7 +53,7 @@
 extern hekate_config h_cfg;
 
 static u32 start_time, end_time;
-u32 color_idx = 0;
+extern u32 color_idx;
 
 static ALWAYS_INLINE u32 _read_le_u32(const void *buffer, u32 offset) {
     return (*(u8*)(buffer + offset + 0)        ) |
@@ -167,6 +167,7 @@ void dump_keys(key_derivation_ctx_t* output) {
     }
 
     u32 start_whole_operation_time = get_tmr_us();
+    start_time = get_tmr_us();
 
     bool is_dev = fuse_read_hw_state() == FUSE_NX_HW_STATE_DEV;
 
@@ -203,7 +204,7 @@ void dump_keys(key_derivation_ctx_t* output) {
     _derive_misc_keys(keys, is_dev);
 
     end_time = get_tmr_us();
-    gfx_printf("%kKeygen part done in %d us\n", colors[(color_idx++) % 6], end_time - start_whole_operation_time);
+    gfx_printf("%kKeygen part done in %d us\n\n", colors[(color_idx++) % 6], end_time - start_whole_operation_time);
     memcpy(output, keys, sizeof(key_derivation_ctx_t));
 }
 
