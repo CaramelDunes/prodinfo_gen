@@ -32,8 +32,6 @@
 #include <rtc/max77620-rtc.h>
 #include <soc/bpmp.h>
 #include <soc/hw_init.h>
-#include "storage/emummc.h"
-#include "storage/nx_emmc.h"
 #include <storage/nx_sd.h>
 #include <storage/sdmmc.h>
 #include <utils/btn.h>
@@ -42,7 +40,8 @@
 #include <utils/sprintf.h>
 #include <utils/util.h>
 
-#include "keys/keys.h"
+#include "gfx/gfx.h"
+#include "prodinfo/build_prodinfo.h"
 
 hekate_config h_cfg;
 boot_cfg_t __attribute__((section ("._boot_cfg"))) b_cfg;
@@ -68,6 +67,7 @@ volatile nyx_storage_t *nyx_str = (nyx_storage_t *)NYX_STORAGE_ADDR;
 #define  CBFS_DRAM_MAGIC    0x4452414D // "DRAM"
 
 static void *coreboot_addr;
+static const char* DONOR_PRODINFO_FILENAME = "sd:/switch/donor_prodinfo.bin";
 
 void reloc_patcher(u32 payload_dst, u32 payload_src, u32 payload_size)
 {
@@ -289,21 +289,14 @@ void launch_hekate()
 		launch_payload("bootloader/update.bin", false);
 }
 
-void dump_sysnand()
+void build_prodinfo_from_scratch()
 {
-	h_cfg.emummc_force_disable = true;
-	emu_cfg.enabled = false;
-	b_cfg.extra_cfg &= ~EXTRA_CFG_DUMP_EMUMMC;
-	dump_keys();
+	build_prodinfo(NULL);
 }
 
-void dump_emunand()
+void build_prodinfo_from_donor()
 {
-	if (h_cfg.emummc_force_disable)
-		return;
-	emu_cfg.enabled = true;
-	b_cfg.extra_cfg |= EXTRA_CFG_DUMP_EMUMMC;
-	dump_keys();
+	build_prodinfo(DONOR_PRODINFO_FILENAME);
 }
 
 power_state_t STATE_POWER_OFF           = POWER_OFF_RESET;
@@ -312,8 +305,8 @@ power_state_t STATE_REBOOT_RCM          = REBOOT_RCM;
 power_state_t STATE_REBOOT_BYPASS_FUSES = REBOOT_BYPASS_FUSES;
 
 ment_t ment_top[] = {
-	MDEF_HANDLER("Dump from SysNAND", dump_sysnand, COLOR_RED),
-	MDEF_HANDLER("Dump from EmuNAND", dump_emunand, COLOR_ORANGE),
+	MDEF_HANDLER("Build PRODINFO file from scratch", build_prodinfo_from_scratch, COLOR_RED),
+	MDEF_HANDLER("Build PRODINFO file from donor", build_prodinfo_from_donor, COLOR_ORANGE),
 	MDEF_CAPTION("---------------", COLOR_YELLOW),
 	MDEF_HANDLER("Payloads...", launch_tools, COLOR_GREEN),
 	MDEF_HANDLER("Reboot to hekate", launch_hekate, COLOR_BLUE),
@@ -366,14 +359,8 @@ void ipl_main()
 	// Overclock BPMP.
 	bpmp_clk_rate_set(h_cfg.t210b01 ? BPMP_CLK_DEFAULT_BOOST : BPMP_CLK_LOWER_BOOST);
 
-	// Load emuMMC configuration from SD.
-	emummc_load_cfg();
-	// Ignore whether emummc is enabled.
-	h_cfg.emummc_force_disable = emu_cfg.sector == 0 && !emu_cfg.path;
-	emu_cfg.enabled = !h_cfg.emummc_force_disable;
-
-	// Grey out emummc option if not present.
-	if (h_cfg.emummc_force_disable)
+	// Grey out donor option if donor not present.
+    if (f_stat(DONOR_PRODINFO_FILENAME, NULL))
 	{
 		ment_top[1].type = MENT_CAPTION;
 		ment_top[1].color = 0xFF555555;
