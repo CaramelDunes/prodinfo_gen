@@ -2,6 +2,7 @@ container:
   image: devkitpro/devkita64:latest
   
 payload_build_task:
+  install_gcc_script: apt-get update && apt-get install -y --no-install-recommends build-essential
   build_script: make
   payload_artifacts:
     path: "output/prodinfo_gen.bin"
