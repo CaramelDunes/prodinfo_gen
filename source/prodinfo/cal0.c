@@ -439,21 +439,23 @@ void write_short_values(u8 *prodinfo_buffer, u32 display_id)
 {
     prodinfo_buffer[OFFSET_OF_BLOCK(RegionCode)] = 1;
 
+    u8 product_model = 1;
     switch (fuse_read_hw_type())
     {
     case FUSE_NX_HW_TYPE_ICOSA:
-        prodinfo_buffer[OFFSET_OF_BLOCK(ProductModel)] = 1;
+        product_model = 1;
         break;
     case FUSE_NX_HW_TYPE_IOWA:
-        prodinfo_buffer[OFFSET_OF_BLOCK(ProductModel)] = 3;
+        product_model = 3;
         break;
     case FUSE_NX_HW_TYPE_HOAG:
-        prodinfo_buffer[OFFSET_OF_BLOCK(ProductModel)] = 4;
+        product_model = 4;
         break;
-    default:
-        prodinfo_buffer[OFFSET_OF_BLOCK(ProductModel)] = 1;
+    case FUSE_NX_HW_TYPE_AULA:
+        product_model = 6;
         break;
     }
+    prodinfo_buffer[OFFSET_OF_BLOCK(ProductModel)] = product_model;
 
     unsigned char brightness_mapping[12] = {
         0x00, 0x00, 0x80, 0x3F, 0x00, 0x00, 0x00, 0x00, 0x0A, 0xD7, 0xA3, 0x3C};
