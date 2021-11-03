@@ -96,7 +96,14 @@ void build_prodinfo(const char* optional_donor_filename) {
         u32 prodinfo_size = MAXIMUM_PRODINFO_SIZE;
         u8 *prodinfo_buffer = calloc(prodinfo_size, 1);
 
-        if (optional_donor_filename != NULL) {
+        u64 device_id_int = fuse_get_device_id();
+
+        // First nibble is always 6 but second one ranges from 0 to 3.
+        device_id_int |= 0x6000000000000000ULL;
+
+        bool is_from_donor = optional_donor_filename != NULL;
+
+        if (is_from_donor) {
             read_keyset_t donor_keyset = {0};
             bool read_keys_result = read_keys(&donor_keyset, "sd:/switch/donor.keys");
             if (!read_keys_result) {
@@ -108,22 +115,24 @@ void build_prodinfo(const char* optional_donor_filename) {
 
             if (!import_result) {
                 gfx_printf("\n%kCouldn't import from donor. Generating from scratch.\n", colors[(color_idx++) % 6]);
-                memset(&imported_parts, 0, sizeof(imported_parts_t));   
+                memset(&imported_parts, 0, sizeof(imported_parts_t));
             } else {
-                // We simply copy here. What should encrypted will be by _build_cal0.
                 gfx_printf("%kImporting GameCard certificate\n", colors[(color_idx++) % 6]);
                 memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(GameCardCertificate), imported_parts.gamecard_certificate, SIZE_OF_BLOCK(GameCardCertificate));
                                 
                 gfx_printf("%kImporting extended GameCard key\n\n", colors[(color_idx++) % 6]);
                 memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(ExtendedGameCardKey) + 0x10, imported_parts.extended_gamecard_key, SIZE_OF_BLOCK(ExtendedGameCardKey));
+            
+                // Don't encrypt it when building from scratch, as it will prevent the console from booting.
+                encrypt_extended_gamecard_key(prodinfo_buffer, prodinfo_buffer + OFFSET_OF_BLOCK(ExtendedGameCardKey) + 0x10, device_id_int, keyset.master_key[0]);
             }
         }
 
-        _build_cal0(prodinfo_buffer, prodinfo_size, keyset.master_key[0]);
+        _build_cal0(prodinfo_buffer, prodinfo_size, keyset.master_key[0], device_id_int);
 
         gfx_printf("\n%kWriting output file...\n", colors[(color_idx++) % 6]);
-        _save_prodinfo_to_sd(prodinfo_buffer, prodinfo_size, optional_donor_filename != NULL);
-        
+        _save_prodinfo_to_sd(prodinfo_buffer, prodinfo_size, is_from_donor);
+
         free(prodinfo_buffer); 
     }
 
@@ -146,13 +155,8 @@ void build_prodinfo(const char* optional_donor_filename) {
     gfx_clear_grey(0x1B);
 }
 
-static void _build_cal0(u8* prodinfo_buffer, u32 prodinfo_size, u8 master_key_0[16])
+static void _build_cal0(u8* prodinfo_buffer, u32 prodinfo_size, u8 master_key_0[16], u64 device_id_int)
 {
-    u64 device_id_int = fuse_get_device_id();
-
-    // First nibble is always 6 but second one ranges from 0 to 3.
-    device_id_int |= 0x6000000000000000ULL;
-
     char device_id_as_string[0x11] = {0};
     device_id_string(device_id_as_string);
 
@@ -203,7 +207,6 @@ static void _build_cal0(u8* prodinfo_buffer, u32 prodinfo_size, u8 master_key_0[
     gfx_printf("%kWriting extended keys\n", colors[(color_idx++) % 6]);
     encrypt_extended_device_key(prodinfo_buffer, prodinfo_buffer + OFFSET_OF_BLOCK(ExtendedEccB233DeviceKey) + 0x10, device_id_int, master_key_0);
     encrypt_extended_eticket_key(prodinfo_buffer, prodinfo_buffer + OFFSET_OF_BLOCK(ExtendedRsa2048ETicketKey) + 0x10, device_id_int, master_key_0);
-    encrypt_extended_gamecard_key(prodinfo_buffer, prodinfo_buffer + OFFSET_OF_BLOCK(ExtendedGameCardKey) + 0x10, device_id_int, master_key_0);
 
     gfx_printf("\n%kWriting checksums\n", colors[(color_idx++) % 6]);
     write_all_crc(prodinfo_buffer, prodinfo_size);
