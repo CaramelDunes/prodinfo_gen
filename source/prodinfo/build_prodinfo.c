@@ -197,8 +197,12 @@ static void _build_cal0(u8* prodinfo_buffer, u32 prodinfo_size, u8 master_key_0[
     write_short_values(prodinfo_buffer, display_id);
 
     // Certificates
-    gfx_printf("%kWriting empty device certificate\n", colors[(color_idx++) % 6]);
-    write_device_certificate(prodinfo_buffer, device_id_as_string);
+    gfx_printf("%kWriting device id strings\n", colors[(color_idx++) % 6]);
+    // On boot, the device id from fuses is compared to the one from certificates.
+    // Until 14.0.0 it uses EccB233DeviceCertificate.
+    write_device_id_string_at_offset(prodinfo_buffer, device_id_as_string, OFFSET_OF_BLOCK(EccB233DeviceCertificate) + 0xC4);
+    // Starting from 14.0.0, it uses Rsa2048ETicketCertificate
+    write_device_id_string_at_offset(prodinfo_buffer, device_id_as_string, OFFSET_OF_BLOCK(Rsa2048ETicketCertificate) + 0xC4);
 
     gfx_printf("%kWriting empty SSL certificate\n\n", colors[(color_idx++) % 6]);
     write_ssl_certificate(prodinfo_buffer);

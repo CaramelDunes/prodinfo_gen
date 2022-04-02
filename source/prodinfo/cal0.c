@@ -347,15 +347,15 @@ void write_serial_number(u8 *prodinfo_buffer)
     memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(SerialNumber), serial_number, 14);
 }
 
-void write_device_certificate(u8 *prodinfo_buffer, const char *device_id_string)
+void write_device_id_string_at_offset(u8 *prodinfo_buffer, const char *device_id_string, u32 offset)
 {
-    prodinfo_buffer[0x0480 + 0xC4] = 'N';
-    prodinfo_buffer[0x0480 + 0xC5] = 'X';
+    prodinfo_buffer[offset] = 'N';
+    prodinfo_buffer[offset + 1] = 'X';
 
-    memcpy(prodinfo_buffer + 0x0480 + 0xC6, device_id_string, 0x10);
+    memcpy(prodinfo_buffer + offset + 2, device_id_string, 0x10);
 
-    prodinfo_buffer[0x0480 + 0xD6] = '-';
-    prodinfo_buffer[0x0480 + 0xD7] = '0';
+    prodinfo_buffer[offset + 18] = '-';
+    prodinfo_buffer[offset + 19] = '0';
 }
 
 void write_ssl_certificate(u8 *prodinfo_buffer)
@@ -523,16 +523,6 @@ void write_all_sha256(u8 *prodinfo_buffer)
     // SslCertificate
     u32 ssl_certificate_size = *(u32 *)(prodinfo_buffer + OFFSET_OF_BLOCK(SslCertificateSize));
     se_calc_sha256_oneshot(prodinfo_buffer + 0x12E0, prodinfo_buffer + 0x0AE0, ssl_certificate_size);
-}
-
-void import_device_certificate(u8 *donor_prodinfo_buffer, u8 *prodinfo_buffer)
-{
-    memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(EccB233DeviceCertificate), donor_prodinfo_buffer + OFFSET_OF_BLOCK(EccB233DeviceCertificate), SIZE_OF_BLOCK(EccB233DeviceCertificate));
-}
-
-void import_eticket_certificate(u8 *donor_prodinfo_buffer, u8 *prodinfo_buffer)
-{
-    memcpy(prodinfo_buffer + OFFSET_OF_BLOCK(Rsa2048ETicketCertificate), donor_prodinfo_buffer + OFFSET_OF_BLOCK(Rsa2048ETicketCertificate), SIZE_OF_BLOCK(Rsa2048ETicketCertificate));
 }
 
 void import_gamecard_certificate(u8 *donor_prodinfo_buffer, u8 *prodinfo_buffer)

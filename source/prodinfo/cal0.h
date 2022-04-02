@@ -10,7 +10,7 @@ void device_id_string(char device_id_string[0x11]);
 
 void write_ssl_certificate(u8 *prodinfo_buffer);
 void write_random_number(u8 *prodinfo_buffer, u64 device_id);
-void write_device_certificate(u8 *prodinfo_buffer, const char *device_id_string);
+void write_device_id_string_at_offset(u8 *prodinfo_buffer, const char *device_id_string, u32 offset);
 
 void write_header(u8 *prodinfo_buffer);
 void write_config_id(u8 *prodinfo_buffer);
@@ -43,8 +43,6 @@ bool valid_extended_gamecard_key(u8 *prodinfo_buffer, u8 *master_key);
 bool valid_sha256_blocks(u8 *prodinfo_buffer, u32 prodinfo_size);
 
 // Import
-void import_device_certificate(u8 *donor_prodinfo_buffer, u8 *prodinfo_buffer);
-void import_eticket_certificate(u8 *donor_prodinfo_buffer, u8 *prodinfo_buffer);
 void import_gamecard_certificate(u8 *donor_prodinfo_buffer, u8 *prodinfo_buffer);
 void import_amiiboo_certificates(u8 *donor_prodinfo_buffer, u8 *prodinfo_buffer);
 
