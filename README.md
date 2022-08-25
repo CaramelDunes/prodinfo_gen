@@ -29,7 +29,7 @@ Usage
 * If you want to use a donor PRODINFO, place it at `sd:/switch/donor_prodinfo.bin`. **Note:** If the donor is a patched or Mariko Switch, you will need to copy the *donor's* keys to `sd:/switch/donor.keys`.
 * Launch prodinfo_gen.bin using your favorite payload injector or chainloader.
 * You should find `sd:/switch/generated_prodinfo_from_scratch.bin` or `sd:/switch/generated_prodinfo_from_donor.bin` depending on what you selected.
-* You can now write that PRODINFO to your NAND using a tool such as HacDiskMount (*it is recommended to make a backup of the current PRODINFO first*).
+* You can now write that PRODINFO to your NAND using a tool such as HacDiskMount or [prodinfo Restore tegrascript](https://github.com/JeffVi/Prodinfo-Restore-TegraScript) (*it is recommended to make a backup of the current PRODINFO first*).
 
 Building
 ========
